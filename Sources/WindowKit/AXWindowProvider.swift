@@ -122,9 +122,27 @@ public struct SystemScreenProvider: ScreenProviding {
 
     public var screens: [ScreenInfo] {
         NSScreen.screens.enumerated().map { index, screen in
-            ScreenInfo(id: index, frame: screen.frame, visibleFrame: screen.visibleFrame)
+            ScreenInfo(
+                id: Self.displayID(of: screen) ?? (Self.syntheticIDBase + index),
+                frame: screen.frame,
+                visibleFrame: screen.visibleFrame
+            )
         }
     }
+
+    /// `CGDirectDisplayID` for a screen, which is stable across sleep/wake,
+    /// resolution changes, and replug — unlike the `NSScreen.screens` index
+    /// this used to be.
+    private static func displayID(of screen: NSScreen) -> Int? {
+        let key = NSDeviceDescriptionKey("NSScreenNumber")
+        guard let number = screen.deviceDescription[key] as? NSNumber else { return nil }
+        return Int(number.uint32Value)
+    }
+
+    /// Used only if AppKit ever fails to report a screen number. Far above any
+    /// real `CGDirectDisplayID` so a synthetic id can never collide with a
+    /// real one and silently alias two displays together.
+    private static let syntheticIDBase = 1_000_000
 
     /// The Accessibility origin is the top-left of whichever display has a
     /// Cocoa origin of `(0, 0)` — almost always `screens[0]`, but not
