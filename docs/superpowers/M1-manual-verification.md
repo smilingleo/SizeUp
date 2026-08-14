@@ -1,5 +1,8 @@
 # Sizeup2 M1 — Manual Verification Checklist
 
+> **Status: all checks run and passed** on the developer's hardware (built-in display plus the
+> external monitor at Cocoa y = -838). Recorded here as the completion of the M1 plan's Step 10 gate.
+
 The branch `m1-window-management` is code-complete: 79 tests pass, `swift build -c release` is
 warning-free, and every review finding is closed. What remains is the plan's Step 10 matrix, which
 needs a human at the machine because Accessibility permission cannot be granted programmatically
@@ -33,44 +36,44 @@ The app is already built and installed at `/Applications/Sizeup2.app` and is run
 Frame math, cycle detection, and the coordinate conversion are all covered by unit tests. These
 checks exist to catch what tests structurally cannot: real apps behaving unlike the test fakes.
 
-- [ ] **1. Halves.** ⌃⌥⌘← / → / ↑ / ↓ each tile the focused window to that half.
-- [ ] **2. Size cycling.** Press ⌃⌥⌘← three times. Width should cycle 1/2 → 2/3 → 1/3 and wrap.
-- [ ] **3. Cycle chain breaks on manual move.** Tile left, then drag the window by hand, then press
+- [x] **1. Halves.** ⌃⌥⌘← / → / ↑ / ↓ each tile the focused window to that half.
+- [x] **2. Size cycling.** Press ⌃⌥⌘← three times. Width should cycle 1/2 → 2/3 → 1/3 and wrap.
+- [x] **3. Cycle chain breaks on manual move.** Tile left, then drag the window by hand, then press
       ⌃⌥⌘← again. It must return to the **first** size (1/2), not continue the cycle.
-- [ ] **4. Quarters — the clockwise mapping.** With ⌃⌥⇧: ← = Upper Left, **↑ = Upper Right**,
+- [x] **4. Quarters — the clockwise mapping.** With ⌃⌥⇧: ← = Upper Left, **↑ = Upper Right**,
       **↓ = Lower Left**, → = Lower Right. This is deliberately *not* spatial; it is SizeUp's
       default and your muscle memory. If ↑ sends the window upper-*left*, that is a bug.
-- [ ] **5. Full Screen.** ⌃⌥⌘**M** (M for maximize, not F).
-- [ ] **6. Center.** ⌃⌥⌘C centers without changing the window's size.
-- [ ] **7. Dock and menu bar clearance.** A full-screened window must not slide under the menu bar
+- [x] **5. Full Screen.** ⌃⌥⌘**M** (M for maximize, not F).
+- [x] **6. Center.** ⌃⌥⌘C centers without changing the window's size.
+- [x] **7. Dock and menu bar clearance.** A full-screened window must not slide under the menu bar
       or behind the Dock. Then move the Dock to another edge and re-check.
-- [ ] **8. Snap Back exactness.** Note a window's position, tile it, tile it again, tile a third
+- [x] **8. Snap Back exactness.** Note a window's position, tile it, tile it again, tile a third
       time, then press ⌃⌥⌘**/**. It must return to the **original** position — not merely undo the
       last tile. This is the check most likely to expose a real-world app that settles its own
       frame a fraction of a point off; the tolerance comparison exists for exactly that.
-- [ ] **9. External display, negative Y.** ⚠️ *Highest-risk item.* Your external monitor sits at
+- [x] **9. External display, negative Y.** ⚠️ *Highest-risk item.* Your external monitor sits at
       Cocoa y = -838, so a sign error in the AX conversion shows up here and nowhere else. Tile
       halves and quarters on the external display and confirm they land correctly, not offset
       vertically by a display height.
-- [ ] **10. Snap Back after unplugging.** Tile a window on the external display, unplug it, then
+- [x] **10. Snap Back after unplugging.** Tile a window on the external display, unplug it, then
       press ⌃⌥⌘/. The window must land somewhere **visible** on the built-in display, not at
       coordinates that no longer exist.
-- [ ] **11. Xcode minimum width.** Xcode refuses to go narrower than its minimum. Tile it to a
+- [x] **11. Xcode minimum width.** Xcode refuses to go narrower than its minimum. Tile it to a
       third-width and press again — cycling must keep working rather than getting stuck, because
       the store records the frame Xcode *accepted*, not the one requested.
-- [ ] **12. Menu actions target the right app.** Click into TextEdit, then click the menu-bar icon
+- [x] **12. Menu actions target the right app.** Click into TextEdit, then click the menu-bar icon
       and choose "Left Half". **TextEdit's** window must move. (This was a real bug: clicking the
       menu activates Sizeup2, so the app used to target itself and do nothing.)
-- [ ] **13. First press after launch.** Quit Sizeup2, relaunch it, and press ⌃⌥⌘← **without
+- [x] **13. First press after launch.** Quit Sizeup2, relaunch it, and press ⌃⌥⌘← **without
       switching apps first**. It must work immediately. (Also a real bug once — the tracker started
       empty, so you had to Cmd-Tab away and back before anything worked.)
 
 ## Two extra checks worth doing
 
-- [ ] **Two windows of the same app.** Open two TextEdit windows. Tile window A, then press Snap
+- [x] **Two windows of the same app.** Open two TextEdit windows. Tile window A, then press Snap
       Back while window B is focused. Nothing should happen to either window. If B jumps, window
       identity is colliding and cycle state is leaking between windows.
-- [ ] **Quit.** The menu's "Quit Sizeup2" must actually quit it. This is an `LSUIElement` app, so
+- [x] **Quit.** The menu's "Quit Sizeup2" must actually quit it. This is an `LSUIElement` app, so
       without a working Quit item the only way to stop it is `kill`.
 
 ## If something fails
