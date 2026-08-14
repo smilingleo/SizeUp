@@ -17,10 +17,12 @@ let package = Package(
         .target(name: "Geometry"),
         .target(name: "WindowKit", dependencies: ["Geometry"]),
         .target(name: "Hotkeys"),
-        .executableTarget(name: "App", dependencies: ["Geometry", "WindowKit", "Hotkeys"]),
+        .target(name: "Core", dependencies: ["Geometry", "WindowKit", "Hotkeys"]),
+        .executableTarget(name: "App", dependencies: ["Geometry", "WindowKit", "Hotkeys", "Core"]),
         .testTarget(name: "GeometryTests", dependencies: ["Geometry", testing]),
         .testTarget(name: "WindowKitTests", dependencies: ["WindowKit", "Geometry", testing]),
         .testTarget(name: "HotkeysTests", dependencies: ["Hotkeys", testing]),
+        .testTarget(name: "CoreTests", dependencies: ["Core", "Geometry", "WindowKit", testing]),
     ],
     swiftLanguageModes: [.v6]
 )
