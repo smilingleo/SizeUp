@@ -1,8 +1,6 @@
+import Testing
 import CoreGraphics
 @testable import Geometry
-
-#if swift(>=6.0) && os(macOS) && (swift(>=6.1) || os(macOS))
-import Testing
 
 /// The user's built-in display: 3360x1890 with a 30pt menu bar.
 private let builtIn = ScreenInfo(
@@ -96,8 +94,3 @@ private let builtIn = ScreenInfo(
     #expect(big.maxX == small.minX)
     #expect(big.width + small.width == 3360)
 }
-
-#else
-// Testing framework not available in this environment.
-// See task-1-report.md for validation evidence.
-#endif

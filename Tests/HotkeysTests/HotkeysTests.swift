@@ -1,1 +1,5 @@
-// Hotkeys tests placeholder
+import Testing
+
+@Test func placeholder() {
+    #expect(true)
+}
