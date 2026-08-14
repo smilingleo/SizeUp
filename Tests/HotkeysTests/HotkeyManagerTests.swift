@@ -42,6 +42,18 @@ import Testing
     let ok = manager.register(shortcut) {}
     #expect(!ok)
     #expect(manager.registrationFailures == [shortcut])
+    #expect(manager.handlerInstallFailed)
+}
+
+@MainActor
+@Test func unregisterAllClearsHandlerInstallFailedFlag() {
+    let manager = HotkeyManager()
+    manager.forceEventHandlerInstallFailureForTesting = true
+    let shortcut = Shortcut(keyCode: 80, modifierFlags: 0)
+    _ = manager.register(shortcut) {}
+    #expect(manager.handlerInstallFailed)
+    manager.unregisterAll()
+    #expect(!manager.handlerInstallFailed)
 }
 
 @MainActor

@@ -73,6 +73,14 @@ public final class HotkeyManager {
     /// application or the system already owns them.
     public private(set) var registrationFailures: [Shortcut] = []
 
+    /// Set once if the process-wide Carbon event handler itself failed to
+    /// install. When this is true, `registrationFailures` will already
+    /// contain every shortcut ever passed to `register`, since none of them
+    /// could possibly fire — but this flag lets callers distinguish "the
+    /// event handler itself is broken" from "some individual shortcuts lost
+    /// a conflict", which deserves at least as strong a warning.
+    public private(set) var handlerInstallFailed = false
+
     /// Test-only hook: when set, `installEventHandlerIfNeeded` reports
     /// failure without making the real Carbon call, so tests can exercise
     /// the "handler install failed" path without needing Carbon itself to
@@ -124,6 +132,7 @@ public final class HotkeyManager {
         handles.removeAll()
         claimed.removeAll()
         registrationFailures.removeAll()
+        handlerInstallFailed = false
     }
 
     private static let signature: OSType = 0x53_5A_55_50  // 'SZUP'
@@ -135,7 +144,10 @@ public final class HotkeyManager {
     ///   a hard registration failure rather than silently proceeding.
     private func installEventHandlerIfNeeded() -> Bool {
         guard handles.eventHandler == nil else { return true }
-        if forceEventHandlerInstallFailureForTesting { return false }
+        if forceEventHandlerInstallFailureForTesting {
+            handlerInstallFailed = true
+            return false
+        }
         var spec = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
             eventKind: UInt32(kEventHotKeyPressed)
@@ -158,6 +170,7 @@ public final class HotkeyManager {
         )
         guard status == noErr, handles.eventHandler != nil else {
             handles.eventHandler = nil
+            handlerInstallFailed = true
             return false
         }
         return true

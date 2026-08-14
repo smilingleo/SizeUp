@@ -34,6 +34,21 @@ memory.
 
 ## Installing
 
+> **Before you run Sizeup2 for the first time**, SizeUp is almost certainly
+> already claiming the exact shortcuts Sizeup2 needs. Open SizeUp's
+> preferences and **disable** its Halves, Quarters, Full Screen, Center, and
+> Snap Back shortcuts, keeping only its four Spaces shortcuts (SizeUp's
+> Spaces handling is why it stays installed at all in this milestone — see
+> "Status" below). Two processes racing for the same global hotkey is not
+> deterministic: whichever one wins can vary, and losing is silent unless
+> you look for it. A ⚠️ warning-triangle icon in the menu bar (instead of
+> the normal split-rectangle icon) means one or more shortcuts could not be
+> claimed — open the menu to see which.
+>
+> **Launch-at-login is not implemented yet.** Sizeup2 must be started
+> manually after every reboot or logout; nothing currently keeps it running
+> across sessions.
+
 ```
 make dev
 ```
