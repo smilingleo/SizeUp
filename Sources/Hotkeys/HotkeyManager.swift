@@ -161,8 +161,16 @@ public final class HotkeyManager {
 }
 
 /// C callback for hotkey presses. Recovers the `CarbonHandles` from
-/// `userData`, looks up the handler by hotkey id, then hops to the main
-/// actor before invoking it.
+/// `userData`, then hops to the main actor before looking up the handler by
+/// hotkey id and invoking it.
+///
+/// The dictionary lookup happens *inside* the dispatched block, not out
+/// here: today registration happens once at launch, so reading it on
+/// whatever thread Carbon delivers this callback on is safe by luck, but a
+/// later feature that re-registers hotkeys while the app is running would
+/// turn a same-thread read here into a live race with a main-actor mutation
+/// of `registrations`. Deferring the read to the main actor removes the
+/// race entirely, rather than papering over it with a lock.
 ///
 /// This does NOT use `MainActor.assumeIsolated`: `InstallEventHandler` on the
 /// application event target is documented as delivering on the run loop the
@@ -188,9 +196,19 @@ private let hotkeyEventCallback: EventHandlerUPP = { _, event, userData in
     )
     guard status == noErr else { return OSStatus(eventNotHandledErr) }
 
-    let handles = Unmanaged<HotkeyManager.CarbonHandles>.fromOpaque(userData).takeUnretainedValue()
-    guard let handler = handles.handler(for: hotKeyID.id) else { return noErr }
+    // Only the pointer is recovered on this thread; the dictionary itself
+    // is read on the main actor, inside the dispatched block below. The
+    // pointer crosses the closure boundary as a bit pattern, not as
+    // `UnsafeMutableRawPointer` or the `CarbonHandles` instance itself:
+    // Swift 6 strict concurrency treats both of those as still tied to this
+    // call's isolation domain, and correctly refuses to let them be
+    // captured by a closure that runs on another one.
+    let id = hotKeyID.id
+    let rawPointerBits = Int(bitPattern: userData)
     DispatchQueue.main.async {
+        guard let pointer = UnsafeMutableRawPointer(bitPattern: rawPointerBits) else { return }
+        let handles = Unmanaged<HotkeyManager.CarbonHandles>.fromOpaque(pointer).takeUnretainedValue()
+        guard let handler = handles.handler(for: id) else { return }
         handler()
     }
     return noErr

@@ -35,14 +35,14 @@ public final class WindowStateStore {
     /// Returns a non-zero step only when the same cycling action is repeated
     /// and the window still sits exactly where it was last placed.
     public func cycleStep(for key: WindowKey, action: Action, currentFrame: CGRect) -> Int {
+        let state = states[key]
         guard action.cycles,
-              let state = states[key],
-              state.lastAction == action,
-              approximatelyEqual(state.appliedFrame, currentFrame)
+              state?.lastAction == action,
+              isOurs(state, comparedTo: currentFrame)
         else { return 0 }
 
         touch(key)
-        return state.cycleStepAdvanced
+        return state!.cycleStepAdvanced
     }
 
     /// Records the outcome of a placement.
@@ -54,11 +54,12 @@ public final class WindowStateStore {
     ///     the Snap Back target only when the window was not already under our
     ///     control, so a chain of actions still undoes to the user's original.
     public func record(key: WindowKey, action: Action, achievedFrame: CGRect, previousFrame: CGRect) {
-        let wasOurs = states[key].map { approximatelyEqual($0.appliedFrame, previousFrame) } ?? false
-        let original = wasOurs ? (states[key]?.originalFrame ?? previousFrame) : previousFrame
+        let existing = states[key]
+        let wasOurs = isOurs(existing, comparedTo: previousFrame)
+        let original = wasOurs ? (existing?.originalFrame ?? previousFrame) : previousFrame
 
         var state = State(lastAction: action, appliedFrame: achievedFrame, originalFrame: original)
-        if let existing = states[key], existing.lastAction == action, wasOurs {
+        if let existing, existing.lastAction == action, wasOurs {
             state.step = existing.cycleStepAdvanced
         }
         states[key] = state
@@ -70,6 +71,17 @@ public final class WindowStateStore {
         guard let state = states[key] else { return nil }
         touch(key)
         return state.originalFrame
+    }
+
+    /// Whether `frame` still matches where we last left this window, i.e.
+    /// whether the chain of our own actions is unbroken. Shared by
+    /// `cycleStep` (which additionally requires the same repeated action) and
+    /// `record` (which does not: any of our own actions keeps the chain
+    /// alive for Snap Back purposes), so the two can never silently diverge
+    /// on what "our chain" means at the frame level.
+    private func isOurs(_ state: State?, comparedTo frame: CGRect) -> Bool {
+        guard let state else { return false }
+        return approximatelyEqual(state.appliedFrame, frame)
     }
 
     private func touch(_ key: WindowKey) {
