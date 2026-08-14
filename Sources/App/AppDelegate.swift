@@ -12,7 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var router: ActionRouter!
     private let activeApplicationTracker = ActiveApplicationTracker(
         ownBundleIdentifier: Bundle.main.bundleIdentifier,
-        ownProcessIdentifier: ProcessInfo.processInfo.processIdentifier
+        ownProcessIdentifier: ProcessInfo.processInfo.processIdentifier,
+        initialFrontmostApplication: NSWorkspace.shared.frontmostApplication
     )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -66,7 +67,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateStatusIcon()
         rebuildMenu()
     }
-
 
     /// The permission dialog is asynchronous and grants without relaunching,
     /// so poll until it is granted, then register.

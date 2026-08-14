@@ -29,9 +29,24 @@ public final class ActiveApplicationTracker {
     private let ownProcessIdentifier: pid_t
     public private(set) var current: RunningApplicationLike?
 
-    public init(ownBundleIdentifier: String?, ownProcessIdentifier: pid_t) {
+    public init(
+        ownBundleIdentifier: String?,
+        ownProcessIdentifier: pid_t,
+        initialFrontmostApplication: RunningApplicationLike? = nil
+    ) {
         self.ownBundleIdentifier = ownBundleIdentifier
         self.ownProcessIdentifier = ownProcessIdentifier
+        // Sizeup2 is `LSUIElement`, so launching it does not re-activate
+        // whatever app was already frontmost -- no
+        // `didActivateApplicationNotification` is ever posted for it. Without
+        // this seed, `current` stays nil from launch until the user manually
+        // switches apps, so every hotkey (and every menu action) is dead for
+        // that entire window. Routing the seed through `noteActivation`
+        // rather than assigning `current` directly keeps the self-exclusion
+        // check in one place.
+        if let initialFrontmostApplication {
+            noteActivation(of: initialFrontmostApplication)
+        }
     }
 
     /// Called whenever any application activates. Ignores activations of
@@ -75,6 +90,16 @@ public struct AXWindowProvider: WindowProviding {
 
     public func focusedWindow() -> WindowHandle? {
         guard let app = targetApplication() else { return nil }
+        // No `isTerminated` check on `app` here: this is safe, but only
+        // because of `NSRunningApplication`'s own behavior, not anything in
+        // this code. Once an app terminates, its `processIdentifier` becomes
+        // -1 (never a recycled pid belonging to some other, unrelated
+        // process), so `AXUIElementCreateApplication(-1)` produces an
+        // element whose attribute copy below fails and this function returns
+        // nil rather than acting on the wrong window. If this is ever
+        // rewritten to cache a bare `pid_t` instead of holding the live
+        // `RunningApplicationLike`, that guarantee disappears and a stale
+        // pid could get silently reassigned to a new, unrelated process.
         let appElement = AXUIElementCreateApplication(app.processIdentifier)
         var raw: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
