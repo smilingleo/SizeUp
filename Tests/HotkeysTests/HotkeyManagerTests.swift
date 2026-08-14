@@ -32,3 +32,21 @@ import Testing
     #expect(manager.register(shortcut) {})
     manager.unregisterAll()
 }
+
+@MainActor
+@Test func deallocatingManagerWithoutUnregisterAllStillReleasesTheShortcut() {
+    let shortcut = Shortcut(keyCode: 80, modifierFlags: 0)
+
+    do {
+        let manager = HotkeyManager()
+        #expect(manager.register(shortcut) {})
+        // No `unregisterAll()` call here: `manager` goes out of scope and is
+        // deallocated, relying entirely on ARC-driven teardown.
+    }
+
+    // If the first registration were still claimed system-wide, this second
+    // registration on a fresh manager would fail.
+    let secondManager = HotkeyManager()
+    defer { secondManager.unregisterAll() }
+    #expect(secondManager.register(shortcut) {})
+}
