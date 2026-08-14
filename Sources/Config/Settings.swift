@@ -72,15 +72,22 @@ public struct Settings: Sendable, Equatable, Codable {
     public var gaps: GapSettings
     public var cycle: [SpanSetting]
     public var skippedBundleIdentifiers: [String]
+    /// Overrides, not a full keymap. An action absent here keeps whatever
+    /// `DefaultKeymap` ships; see `ShortcutSetting`'s doc for why persisting
+    /// the resolved keymap instead would silently orphan a future version's
+    /// new actions.
+    public var shortcutOverrides: [ShortcutSetting]
 
     public init(
         gaps: GapSettings = GapSettings(),
         cycle: [SpanSetting] = [SpanSetting(occupied: 1, columns: 2)],
-        skippedBundleIdentifiers: [String] = []
+        skippedBundleIdentifiers: [String] = [],
+        shortcutOverrides: [ShortcutSetting] = []
     ) {
         self.gaps = gaps
         self.cycle = cycle
         self.skippedBundleIdentifiers = skippedBundleIdentifiers
+        self.shortcutOverrides = shortcutOverrides
     }
 
     /// A synthesized `Codable` throws on a missing key, and a settings file
@@ -96,10 +103,13 @@ public struct Settings: Sendable, Equatable, Codable {
         skippedBundleIdentifiers =
             try container.decodeIfPresent([String].self, forKey: .skippedBundleIdentifiers)
                 ?? defaults.skippedBundleIdentifiers
+        shortcutOverrides =
+            try container.decodeIfPresent([ShortcutSetting].self, forKey: .shortcutOverrides)
+                ?? defaults.shortcutOverrides
     }
 
     private enum CodingKeys: String, CodingKey {
-        case gaps, cycle, skippedBundleIdentifiers
+        case gaps, cycle, skippedBundleIdentifiers, shortcutOverrides
     }
 
     /// The resolved cycle, with invalid steps dropped and order preserved.

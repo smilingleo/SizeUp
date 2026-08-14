@@ -50,19 +50,12 @@ public struct Shortcut: Hashable, Sendable {
         if flags.contains(.option) { out += "⌥" }
         if flags.contains(.shift) { out += "⇧" }
         if flags.contains(.command) { out += "⌘" }
-        return out + Self.keyName(keyCode)
+        return out + keyName
     }
 
-    private static func keyName(_ code: UInt32) -> String {
-        switch code {
-        case KeyCode.leftArrow: return "←"
-        case KeyCode.rightArrow: return "→"
-        case KeyCode.downArrow: return "↓"
-        case KeyCode.upArrow: return "↑"
-        case KeyCode.m: return "M"
-        case KeyCode.c: return "C"
-        case KeyCode.slash: return "/"
-        default: return "?"
-        }
+    /// The label for `keyCode` alone, with no modifiers. Delegates to
+    /// `KeyName` so the actual naming logic lives in one place.
+    public var keyName: String {
+        KeyName.of(keyCode)
     }
 }
