@@ -139,13 +139,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item.target = self
             item.representedObject = ActionBox(action: action)
             item.toolTip = shortcut.displayString
-            if hotkeys.registrationFailures.contains(shortcut) {
-                item.title += "  (shortcut unavailable)"
+            if let failure = hotkeys.failure(for: shortcut) {
+                // Name the reason. "unavailable" gave the user no way to tell a
+                // bug in our keymap from SizeUp still holding the shortcut.
+                item.title += "  (\(failure.explanation))"
             }
             menu.addItem(item)
         }
 
         menu.addItem(.separator())
+
+        let launch = NSMenuItem(
+            title: "Open at Login",
+            action: #selector(toggleLaunchAtLogin),
+            keyEquivalent: ""
+        )
+        launch.target = self
+        launch.state = LaunchAtLogin.isEnabled ? .on : .off
+        // Disabled rather than hidden when the system says registration cannot
+        // succeed, so the option's absence is not mistaken for it being off.
+        launch.isEnabled = LaunchAtLogin.isSupported
+        if !LaunchAtLogin.isSupported {
+            launch.toolTip = "Move Sizeup2 to /Applications to enable this."
+        }
+        menu.addItem(launch)
+
         let quit = NSMenuItem(title: "Quit Sizeup2", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
@@ -163,6 +181,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
         )!
         NSWorkspace.shared.open(url)
+    }
+
+    @objc private func toggleLaunchAtLogin() {
+        do {
+            try LaunchAtLogin.setEnabled(!LaunchAtLogin.isEnabled)
+        } catch {
+            NSLog("Sizeup2: could not change the login item: \(error.localizedDescription)")
+        }
+        // Rebuild so the checkmark reflects what the system actually did, not
+        // what we asked for.
+        rebuildMenu()
     }
 
     @objc private func quit() {

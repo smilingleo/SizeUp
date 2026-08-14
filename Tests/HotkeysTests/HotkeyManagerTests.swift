@@ -19,7 +19,7 @@ import Testing
     #expect(manager.register(shortcut) {})
     let second = manager.register(shortcut) {}
     #expect(!second)
-    #expect(manager.registrationFailures == [shortcut])
+    #expect(manager.registrationFailures.map(\.shortcut) == [shortcut])
 }
 
 @MainActor
@@ -41,7 +41,7 @@ import Testing
     let shortcut = Shortcut(keyCode: 80, modifierFlags: 0)
     let ok = manager.register(shortcut) {}
     #expect(!ok)
-    #expect(manager.registrationFailures == [shortcut])
+    #expect(manager.registrationFailures.map(\.shortcut) == [shortcut])
     #expect(manager.handlerInstallFailed)
 }
 
@@ -72,4 +72,44 @@ import Testing
     let secondManager = HotkeyManager()
     defer { secondManager.unregisterAll() }
     #expect(secondManager.register(shortcut) {})
+}
+
+@MainActor
+@Test func duplicateRegistrationIsReportedAsOurOwnConflictNotAnotherApp() {
+    let manager = HotkeyManager()
+    defer { manager.unregisterAll() }
+    let shortcut = Shortcut(keyCode: 80, modifierFlags: 0)  // F19, unlikely to collide
+
+    #expect(manager.register(shortcut) {})
+    #expect(!manager.register(shortcut) {})
+
+    let failure = manager.failure(for: shortcut)
+    #expect(failure?.reason == .alreadyClaimedByThisApp)
+    #expect(failure?.shortcut == shortcut)
+    #expect(failure?.explanation == "duplicate shortcut")
+}
+
+@MainActor
+@Test func handlerInstallFailureIsDistinctFromAShortcutConflict() {
+    let manager = HotkeyManager()
+    defer { manager.unregisterAll() }
+    manager.forceEventHandlerInstallFailureForTesting = true
+    let shortcut = Shortcut(keyCode: 81, modifierFlags: 0)
+
+    #expect(!manager.register(shortcut) {})
+
+    // A blanket "unavailable" would conflate this with a shortcut collision,
+    // which has a completely different remedy.
+    #expect(manager.failure(for: shortcut)?.reason == .handlerInstallFailed)
+    #expect(manager.failure(for: shortcut)?.explanation == "hotkeys unavailable")
+}
+
+@MainActor
+@Test func noFailureIsRecordedForAShortcutThatRegistered() {
+    let manager = HotkeyManager()
+    defer { manager.unregisterAll() }
+    let shortcut = Shortcut(keyCode: 82, modifierFlags: 0)
+    #expect(manager.register(shortcut) {})
+    #expect(manager.failure(for: shortcut) == nil)
+    #expect(manager.registrationFailures.isEmpty)
 }
