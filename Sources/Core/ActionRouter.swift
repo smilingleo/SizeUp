@@ -131,6 +131,11 @@ public struct ActionRouter {
         to destination: ScreenInfo,
         key: WindowKey
     ) -> (frame: CGRect, action: Action, step: Int) {
+        // `isPlacement` is belt-and-braces: `targetFrame` already returns nil
+        // for every non-placement action, so the `let exact` binding below
+        // would fall through anyway. It is kept because it states the intent at
+        // the point of the decision, and because it keeps this correct if
+        // `targetFrame` ever grows a case for one of those actions.
         if let held = store.retainedPlacement(for: key, currentFrame: current),
            held.action.isPlacement,
            let exact = targetFrame(

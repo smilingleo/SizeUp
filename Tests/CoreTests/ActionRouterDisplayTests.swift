@@ -4,59 +4,7 @@ import Testing
 import WindowKit
 @testable import Core
 
-private let builtIn = ScreenInfo(
-    id: 1, frame: CGRect(x: 0, y: 0, width: 3360, height: 1890),
-    visibleFrame: CGRect(x: 0, y: 0, width: 3360, height: 1860)
-)
-private let external = ScreenInfo(
-    id: 2, frame: CGRect(x: 3360, y: -838, width: 2056, height: 1329),
-    visibleFrame: CGRect(x: 3360, y: -838, width: 2056, height: 1291)
-)
-
-private final class TestWindow: WindowHandle {
-    var current: CGRect
-    var applied: [CGRect] = []
-    let key: WindowKey
-    let bundleIdentifier: String?
-
-    init(frame: CGRect, key: WindowKey = WindowKey(pid: 700, elementHash: 7), bundleIdentifier: String? = nil) {
-        self.current = frame
-        self.key = key
-        self.bundleIdentifier = bundleIdentifier
-    }
-
-    func frame() -> CGRect? { current }
-
-    func setFrame(_ rect: CGRect) -> CGRect? {
-        applied.append(rect)
-        current = rect
-        return rect
-    }
-}
-
-private struct TestWindows: WindowProviding {
-    let window: TestWindow?
-    func focusedWindow() -> WindowHandle? { window }
-}
-
-private struct TestScreens: ScreenProviding {
-    let list: [ScreenInfo]
-    var screens: [ScreenInfo] { list }
-    var primaryFrame: CGRect { list.first?.frame ?? .zero }
-}
-
-@MainActor
-private func makeRouter(
-    window: TestWindow?,
-    screens: [ScreenInfo],
-    store: WindowStateStore
-) -> ActionRouter {
-    ActionRouter(
-        screens: TestScreens(list: screens),
-        windows: TestWindows(window: window),
-        store: store
-    )
-}
+// Fixtures (builtIn, external, TestWindow, makeRouter) live in RouterFixtures.swift.
 
 @MainActor
 @Test func tiledWindowIsRetiledExactlyOnTheDestinationDisplay() {
@@ -131,8 +79,8 @@ private func makeRouter(
     let router = makeRouter(window: window, screens: [builtIn, external], store: store)
     router.perform(.display(.next))
 
-    #expect(store.retainedPlacement(for: window.key, currentFrame: window.current)?.step == 0)
-    #expect(store.retainedPlacement(for: window.key, currentFrame: window.current)?.action == .half(.left))
+    #expect(store.retainedPlacement(for: window.key, currentFrame: window.stored)?.step == 0)
+    #expect(store.retainedPlacement(for: window.key, currentFrame: window.stored)?.action == .half(.left))
 }
 
 @MainActor
@@ -146,7 +94,7 @@ private func makeRouter(
     router.perform(.display(.next))
     router.perform(.snapBack)
 
-    #expect(window.current == original)
+    #expect(window.stored == original)
 }
 
 @MainActor
@@ -169,7 +117,7 @@ private func makeRouter(
         bundleIdentifier: "com.example.locked"
     )
     let router = ActionRouter(
-        screens: TestScreens(list: [builtIn, external]),
+        screens: TestScreens(screens: [builtIn, external]),
         windows: TestWindows(window: window),
         store: store,
         skipList: ["com.example.locked"]
@@ -179,4 +127,114 @@ private func makeRouter(
 
     #expect(window.applied.isEmpty)
     #expect(store.count == 0)
+}
+
+/// The step-preservation test that can actually fail.
+///
+/// With a single span every step index resolves to the same width, so the
+/// earlier tests could not distinguish "preserved the step" from "advanced it"
+/// or "reset it". With three spans the three outcomes are three different
+/// widths on the destination display: preserved 1370, advanced 685, reset 1028.
+@MainActor
+@Test func displayMoveReAppliesTheRetainedSpanNotTheNextOne() {
+    let spans: [Span] = [.half, Span(occupied: 2, of: 3), Span(occupied: 1, of: 3)]
+    let store = WindowStateStore()
+    let window = TestWindow(frame: CGRect(x: 300, y: 300, width: 800, height: 600))
+    let router = makeRouter(
+        window: window, screens: [builtIn, external], spans: spans, store: store
+    )
+
+    router.perform(.half(.left))
+    #expect(window.stored.width == 1680)  // span 0: 1/2 of 3360
+
+    router.perform(.half(.left))
+    #expect(window.stored.width == 2240)  // span 1: 2/3 of 3360
+
+    router.perform(.display(.next))
+    #expect(window.stored == CGRect(x: 3360, y: -838, width: 1370, height: 1291))
+
+    // And the cycle resumes from the right place on the new display: the press
+    // after a move advances exactly one span rather than repeating or skipping.
+    router.perform(.half(.left))
+    #expect(window.stored.width == 685)  // span 2: 1/3 of 2056
+}
+
+/// A third display, left of the built-in one, so that `.next` and `.previous`
+/// lead to DIFFERENT displays. With only two displays both directions wrap to
+/// the same place, and a router that ignored the direction entirely would pass.
+private let thirdDisplay = ScreenInfo(
+    id: 3,
+    frame: CGRect(x: -1920, y: 0, width: 1920, height: 1080),
+    visibleFrame: CGRect(x: -1920, y: 0, width: 1920, height: 1055)
+)
+
+@MainActor
+@Test func previousDirectionIsPlumbedThroughRatherThanHardcoded() {
+    let store = WindowStateStore()
+    let leftHalf = CGRect(x: 0, y: 0, width: 1680, height: 1860)
+    let window = TestWindow(frame: leftHalf)
+    store.record(key: window.key, action: .half(.left), achievedFrame: leftHalf,
+                 previousFrame: CGRect(x: 10, y: 10, width: 100, height: 100))
+    let router = makeRouter(
+        window: window, screens: [thirdDisplay, builtIn, external], store: store
+    )
+
+    router.perform(.display(.previous))
+
+    // Left of the built-in display, not right of it.
+    #expect(window.stored == CGRect(x: -1920, y: 0, width: 960, height: 1055))
+}
+
+@MainActor
+@Test func nextAndPreviousAreOppositeWithThreeDisplays() {
+    let store = WindowStateStore()
+    let start = CGRect(x: 300, y: 300, width: 800, height: 600)
+    let window = TestWindow(frame: start)
+    let router = makeRouter(
+        window: window, screens: [thirdDisplay, builtIn, external], store: store
+    )
+
+    router.perform(.display(.next))
+    #expect(external.visibleFrame.contains(window.stored))
+
+    router.perform(.display(.previous))
+    #expect(builtIn.visibleFrame.contains(window.stored))
+}
+
+@MainActor
+@Test func verticalDirectionsAreNotDisplayMoves() {
+    // `.above`/`.below` are reserved for Spaces in M4. They must do nothing
+    // here, not fall back to next/previous.
+    let store = WindowStateStore()
+    let start = CGRect(x: 300, y: 300, width: 800, height: 600)
+    let window = TestWindow(frame: start)
+    let router = makeRouter(window: window, screens: [builtIn, external], store: store)
+
+    router.perform(.display(.above))
+    router.perform(.display(.below))
+
+    #expect(window.applied.isEmpty)
+    #expect(window.stored == start)
+}
+
+@MainActor
+@Test func retiledWindowThatResistsResizingStillTracksWhatItAchieved() {
+    // An app with a minimum size moved onto a smaller display cannot honour the
+    // request. The store must record what was ACHIEVED, or the next press would
+    // not recognise the window as one of ours.
+    let store = WindowStateStore()
+    let leftHalf = CGRect(x: 0, y: 0, width: 1680, height: 1860)
+    let window = TestWindow(frame: leftHalf, minSize: CGSize(width: 1500, height: 0))
+    store.record(key: window.key, action: .half(.left), achievedFrame: leftHalf,
+                 previousFrame: CGRect(x: 10, y: 10, width: 100, height: 100))
+    let router = makeRouter(
+        window: window, screens: [builtIn, external], store: store
+    )
+
+    router.perform(.display(.next))
+
+    // Requested 1028 wide, but the app refuses to go below 1500.
+    #expect(window.applied.last?.width == 1028)
+    #expect(window.stored.width == 1500)
+    #expect(store.retainedPlacement(for: window.key, currentFrame: window.stored)?.action == .half(.left))
 }
