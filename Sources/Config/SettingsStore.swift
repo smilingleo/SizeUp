@@ -58,6 +58,22 @@ public final class SettingsStore {
     /// `replaceItemAt`. A crash mid-write must not leave a truncated file
     /// on the real path, because the next `load()` would silently reset
     /// every preference — data loss disguised as a fresh start.
+    /// Edits the current settings in place and persists the result.
+    ///
+    /// The only way callers should write settings. Reconstructing a whole
+    /// `Settings` from one editor's fields loses every field that editor does
+    /// not know about, and that is not hypothetical: the Preferences window's
+    /// General tab was written before shortcut overrides existed and rebuilt
+    /// `Settings` from gaps, cycle and skip list alone, so nudging a gap stepper
+    /// silently erased every rebound shortcut. Passing a mutation instead makes
+    /// omission impossible rather than merely reviewable, which matters because
+    /// each new field otherwise adds a fresh way for an old editor to destroy it.
+    public func update(_ mutate: (inout Settings) -> Void) throws {
+        var next = settings
+        mutate(&next)
+        try save(next)
+    }
+
     public func save(_ new: Settings) throws {
         let directory = url.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

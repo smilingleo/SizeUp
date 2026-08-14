@@ -52,6 +52,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
 
+    /// The keymap actually in force, defaults merged with the user's overrides.
+    ///
+    /// Held rather than recomputed at each use so the status menu cannot disagree
+    /// with what is registered: the menu shows each action's shortcut, and reading
+    /// `DefaultKeymap` there would confidently display the wrong keys for every
+    /// rebound action.
+    private var keymap = KeymapResolver.resolve(overrides: [])
+
+    /// Translates the persisted DTOs into the domain type `Core` merges.
+    ///
+    /// `Core` must not depend on `Config` and `Config` must not import Carbon, so
+    /// this crossing has to happen somewhere; it happens here, where it is a
+    /// `compactMap` whose correctness is visible by inspection. The parts with
+    /// decisions in them are in `Config.ShortcutSetting.resolved`, which drops
+    /// unknown identifiers and modifier-less keys, and in `KeymapResolver`.
+    private func resolveKeymap() {
+        keymap = KeymapResolver.resolve(
+            overrides: settings.settings.shortcutOverrides.compactMap { setting in
+                guard let resolved = setting.resolved else { return nil }
+                return ShortcutOverride(
+                    action: resolved.action,
+                    keyCode: resolved.keyCode,
+                    modifierFlags: resolved.modifierFlags
+                )
+            }
+        )
+    }
+
     /// Rebuilt rather than mutated when settings change.
     ///
     /// Every field of `ActionRouter` except the injected `WindowStateStore` is
@@ -81,14 +109,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         activeApplicationTracker.noteActivation(of: app)
     }
 
+    /// Idempotent: unregisters first, so this doubles as "re-register after a
+    /// rebind". Without the unregister, every rebind would leave the previous
+    /// shortcut live and `RegisterEventHotKey` would refuse the new one as
+    /// already claimed by this app.
     private func registerHotkeys() {
-        for (shortcut, action) in DefaultKeymap.bindings {
+        hotkeys.unregisterAll()
+        resolveKeymap()
+        for binding in keymap.bindings {
+            guard let shortcut = binding.shortcut else { continue }
+            let action = binding.action
             hotkeys.register(shortcut) { [weak self] in
                 self?.router.perform(action)
             }
         }
         updateStatusIcon()
         rebuildMenu()
+    }
+
+    /// Releases every hotkey so the shortcut recorder can see keystrokes.
+    ///
+    /// A registered Carbon hotkey consumes its keystroke before the focused
+    /// application receives it, so a recorder built on a local event monitor is
+    /// blind to exactly the shortcuts a user wants to change: pressing the
+    /// current binding would perform its action instead of being recorded.
+    private func suspendHotkeys() {
+        hotkeys.unregisterAll()
+    }
+
+    /// Paired with `suspendHotkeys`. Must run even if the Preferences window is
+    /// closed mid-recording, or the app stays silently inert with every shortcut
+    /// released and no indication why.
+    private func resumeHotkeys() {
+        guard AccessibilityPermission.isGranted else { return }
+        registerHotkeys()
     }
 
     /// The permission dialog is asynchronous and grants without relaunching,
@@ -161,7 +215,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(.separator())
         }
 
-        for (shortcut, action) in DefaultKeymap.bindings {
+        for binding in keymap.bindings {
+            let action = binding.action
             let item = NSMenuItem(
                 title: DefaultKeymap.title(for: action),
                 action: #selector(menuAction(_:)),
@@ -169,11 +224,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             )
             item.target = self
             item.representedObject = ActionBox(action: action)
-            item.toolTip = shortcut.displayString
+            // An action the user deliberately unbound stays listed and clickable —
+            // the menu is the only way to invoke it once it has no key.
+            item.toolTip = binding.shortcut?.displayString ?? "No shortcut"
+            if binding.shortcut == nil { item.title += "  (no shortcut)" }
             // When the handler failed to install, every shortcut carries that
             // same reason and the banner above already says so once. Repeating
             // it on all 13 items buries the banner.
-            if !hotkeys.handlerInstallFailed, let failure = hotkeys.failure(for: shortcut) {
+            if !hotkeys.handlerInstallFailed, let shortcut = binding.shortcut,
+                let failure = hotkeys.failure(for: shortcut) {
                 // Name the reason. "unavailable" gave the user no way to tell a
                 // bug in our keymap from SizeUp still holding the shortcut.
                 item.title += "  (\(failure.explanation))"
@@ -221,9 +280,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func showPreferences() {
         if preferencesWindow == nil {
-            preferencesWindow = PreferencesWindow(store: settings) { [weak self] in
-                self?.rebuildRouter()
-            }
+            preferencesWindow = PreferencesWindow(
+                store: settings,
+                onChange: { [weak self] in
+                    self?.rebuildRouter()
+                    // Shortcuts are part of settings now, so a change may have
+                    // rebound a key. Re-registering unconditionally is cheaper
+                    // than working out whether it did, and getting that wrong
+                    // leaves the old key live and the new one refused.
+                    self?.registerHotkeys()
+                },
+                onRecordingChange: { [weak self] isRecording in
+                    if isRecording {
+                        self?.suspendHotkeys()
+                    } else {
+                        self?.resumeHotkeys()
+                    }
+                }
+            )
         }
         preferencesWindow?.show()
     }
