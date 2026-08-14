@@ -58,23 +58,32 @@ public struct ActionRouter {
         }
     }
 
-    /// If `frame` has no positive overlap with any current screen's
-    /// `visibleFrame` — the display it was stored against has since been
-    /// disconnected, or its resolution changed — center it into the
-    /// `visibleFrame` of the screen the window is currently on, so Snap Back
-    /// never strands the window somewhere unreachable.
+    /// If `frame` is not meaningfully reachable on any current screen —
+    /// the display it was stored against has since been disconnected, or a
+    /// resolution change shifted it so only a sliver still overlaps —
+    /// center it into the `visibleFrame` of the screen the window is
+    /// currently on, so Snap Back never strands the window somewhere the
+    /// user cannot get a hand on it.
     private func clampToVisibleScreen(_ frame: CGRect, current: CGRect) -> CGRect {
         let all = screens.screens
-        let onAnyScreen = all.contains { overlap(frame, $0.visibleFrame) > 0 }
-        guard !onAnyScreen, let screen = screen(containing: current) else { return frame }
+        let reachable = all.contains { isReachable(frame, on: $0.visibleFrame) }
+        guard !reachable, let screen = screen(containing: current) else { return frame }
         let visible = screen.visibleFrame
         let size = CGSize(width: min(frame.width, visible.width), height: min(frame.height, visible.height))
-        return CGRect(
-            x: (visible.midX - size.width / 2).rounded(.down),
-            y: (visible.midY - size.height / 2).rounded(.down),
-            width: size.width,
-            height: size.height
-        )
+        let x = max(visible.minX, (visible.midX - size.width / 2).rounded(.down))
+        let y = max(visible.minY, (visible.midY - size.height / 2).rounded(.down))
+        return CGRect(x: x, y: y, width: size.width, height: size.height)
+    }
+
+    /// A frame counts as reachable on a screen only if at least half its
+    /// area lands inside that screen's `visibleFrame`. A bare `overlap > 0`
+    /// check would pass for a sliver of overlap — exactly the
+    /// resolution-change case this clamp exists to catch — and apply the
+    /// stored frame unchanged, leaving the window effectively unreachable.
+    private func isReachable(_ frame: CGRect, on visible: CGRect) -> Bool {
+        let area = frame.width * frame.height
+        guard area > 0 else { return false }
+        return overlap(frame, visible) / area >= 0.5
     }
 
     /// The display holding the largest part of `frame`, falling back to the

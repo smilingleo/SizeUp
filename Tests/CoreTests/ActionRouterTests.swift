@@ -158,6 +158,41 @@ private func makeRouter(
     #expect(w.stored != disconnectedDisplayFrame)
 }
 
+/// A stored frame with only a sliver of overlap on the current screen —
+/// exactly what a resolution change can produce — must still be treated as
+/// unreachable and clamped, not applied verbatim.
+@MainActor
+@Test func snapBackClampsWhenOnlyASliverOverlapsTheCurrentScreen() {
+    // Mostly off the left edge of `builtIn`: only 20pt of width overlaps.
+    let sliverOverlap = CGRect(x: -880, y: 0, width: 900, height: 700)
+    let w = TestWindow(frame: sliverOverlap)
+    let store = WindowStateStore()
+    let placed = CGRect(x: 0, y: 0, width: 400, height: 400)
+    store.record(key: w.key, action: .half(.left), achievedFrame: placed, previousFrame: sliverOverlap)
+    w.stored = placed
+    let router = makeRouter(window: w, screens: [builtIn], store: store)
+    router.perform(.snapBack)
+    #expect(w.stored != sliverOverlap)
+    #expect(builtIn.visibleFrame.contains(CGPoint(x: w.stored.midX, y: w.stored.midY)))
+}
+
+/// The centering fallback must not place a window one point off the edge
+/// of `visibleFrame` when its size fills the whole screen — `.rounded(.down)`
+/// on the midpoint can otherwise push the origin below `visible.minX`/`minY`.
+@MainActor
+@Test func snapBackClampCentersFullSizeWindowWithoutOverhang() {
+    let sliverOverlap = CGRect(x: -3000, y: 0, width: builtIn.visibleFrame.width, height: builtIn.visibleFrame.height)
+    let w = TestWindow(frame: sliverOverlap)
+    let store = WindowStateStore()
+    let placed = CGRect(x: 0, y: 0, width: 400, height: 400)
+    store.record(key: w.key, action: .half(.left), achievedFrame: placed, previousFrame: sliverOverlap)
+    w.stored = placed
+    let router = makeRouter(window: w, screens: [builtIn], store: store)
+    router.perform(.snapBack)
+    #expect(w.stored.minX >= builtIn.visibleFrame.minX)
+    #expect(w.stored.minY >= builtIn.visibleFrame.minY)
+}
+
 /// With a single span, repeated presses are idempotent — M1 behavior.
 @MainActor
 @Test func repeatedPressIsIdempotentWithOneSpan() {
