@@ -17,7 +17,7 @@ public final class AXWindow: WindowHandle {
     }
 
     public var key: WindowKey {
-        WindowKey(pid: pid, elementHash: Int(CFHash(element)))
+        WindowKey(pid: pid, elementHash: Int(bitPattern: CFHash(element)))
     }
 
     public func frame() -> CGRect? {
