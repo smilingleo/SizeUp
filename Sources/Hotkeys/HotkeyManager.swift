@@ -73,6 +73,12 @@ public final class HotkeyManager {
     /// application or the system already owns them.
     public private(set) var registrationFailures: [Shortcut] = []
 
+    /// Test-only hook: when set, `installEventHandlerIfNeeded` reports
+    /// failure without making the real Carbon call, so tests can exercise
+    /// the "handler install failed" path without needing Carbon itself to
+    /// fail. Not part of the public API.
+    internal var forceEventHandlerInstallFailureForTesting = false
+
     public init() {}
 
     /// Registers `shortcut`, calling `handler` on the main actor when pressed.
@@ -80,7 +86,10 @@ public final class HotkeyManager {
     ///   `registrationFailures` so the UI can surface it.
     @discardableResult
     public func register(_ shortcut: Shortcut, handler: @escaping @MainActor () -> Void) -> Bool {
-        installEventHandlerIfNeeded()
+        guard installEventHandlerIfNeeded() else {
+            registrationFailures.append(shortcut)
+            return false
+        }
 
         guard !claimed.contains(shortcut) else {
             registrationFailures.append(shortcut)
@@ -119,8 +128,14 @@ public final class HotkeyManager {
 
     private static let signature: OSType = 0x53_5A_55_50  // 'SZUP'
 
-    private func installEventHandlerIfNeeded() {
-        guard handles.eventHandler == nil else { return }
+    /// - Returns: `true` if the process-wide event handler is installed,
+    ///   whether it already was or was just installed successfully. `false`
+    ///   if installation was attempted and failed — in that case no hotkey
+    ///   registered afterwards can ever fire, so callers must treat this as
+    ///   a hard registration failure rather than silently proceeding.
+    private func installEventHandlerIfNeeded() -> Bool {
+        guard handles.eventHandler == nil else { return true }
+        if forceEventHandlerInstallFailureForTesting { return false }
         var spec = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
             eventKind: UInt32(kEventHotKeyPressed)
@@ -129,7 +144,7 @@ public final class HotkeyManager {
         // to the Carbon registrations it owns, so the pointer stays valid
         // for exactly as long as the installed handler could fire.
         let context = Unmanaged.passUnretained(handles).toOpaque()
-        InstallEventHandler(
+        let status = InstallEventHandler(
             GetEventDispatcherTarget(),
             hotkeyEventCallback,
             1,
@@ -137,6 +152,11 @@ public final class HotkeyManager {
             context,
             &handles.eventHandler
         )
+        guard status == noErr, handles.eventHandler != nil else {
+            handles.eventHandler = nil
+            return false
+        }
+        return true
     }
 }
 

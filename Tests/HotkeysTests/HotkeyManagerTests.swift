@@ -34,6 +34,17 @@ import Testing
 }
 
 @MainActor
+@Test func failedEventHandlerInstallReportsFailureRatherThanSuccess() {
+    let manager = HotkeyManager()
+    defer { manager.unregisterAll() }
+    manager.forceEventHandlerInstallFailureForTesting = true
+    let shortcut = Shortcut(keyCode: 80, modifierFlags: 0)
+    let ok = manager.register(shortcut) {}
+    #expect(!ok)
+    #expect(manager.registrationFailures == [shortcut])
+}
+
+@MainActor
 @Test func deallocatingManagerWithoutUnregisterAllStillReleasesTheShortcut() {
     let shortcut = Shortcut(keyCode: 80, modifierFlags: 0)
 
