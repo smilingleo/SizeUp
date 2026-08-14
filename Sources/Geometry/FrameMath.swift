@@ -8,7 +8,10 @@ import CoreGraphics
 /// read from other processes and a hung application can report garbage.
 /// A negative size is rejected for the same reason.
 extension CGRect {
-    public var isFinite: Bool {
+    public var isSafeToApply: Bool {
+        // `size.width`/`size.height` are the raw stored values. `rect.width`
+        // would return the standardized (absolute) width and so would happily
+        // accept a negative size.
         origin.x.isFinite && origin.y.isFinite
             && size.width.isFinite && size.height.isFinite
             && size.width >= 0 && size.height >= 0

@@ -174,4 +174,26 @@ private let leftHalf = CGRect(x: 0, y: 0, width: 1680, height: 1860)
                  previousFrame: onBuiltIn, step: 0)
 
     #expect(store.retainedPlacement(for: key, currentFrame: onExternal)?.step == 0)
+    // The other regression a display move can cause: the pre-tiling frame
+    // being clobbered by the intermediate frame the window held on display A.
+    #expect(store.snapBackFrame(for: key) == CGRect(x: 100, y: 100, width: 800, height: 600))
+}
+
+@MainActor
+@Test func retainedPlacementIsNilForAnUnknownWindow() {
+    let store = WindowStateStore()
+    let key = WindowKey(pid: 999, elementHash: 42)
+    #expect(store.retainedPlacement(for: key, currentFrame: .zero) == nil)
+}
+
+@MainActor
+@Test func recordClampsANegativeExplicitStep() {
+    // `step` is public and callers index `spans[step % count]`, where a
+    // negative value traps rather than misbehaving.
+    let store = WindowStateStore()
+    let key = WindowKey(pid: 502, elementHash: 2)
+    let applied = CGRect(x: 0, y: 0, width: 1680, height: 1860)
+    store.record(key: key, action: .half(.left), achievedFrame: applied,
+                 previousFrame: CGRect(x: 1, y: 1, width: 10, height: 10), step: -5)
+    #expect(store.retainedPlacement(for: key, currentFrame: applied)?.step == 0)
 }

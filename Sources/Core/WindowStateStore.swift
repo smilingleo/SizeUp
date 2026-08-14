@@ -69,7 +69,9 @@ public final class WindowStateStore {
 
         var state = State(lastAction: action, appliedFrame: achievedFrame, originalFrame: original)
         if let step {
-            state.step = step
+            // Clamped because callers index `spans[step % count]`, where a
+            // negative step is a trap rather than a wrong answer.
+            state.step = max(0, step)
         } else if let existing, existing.lastAction == action, wasOurs {
             state.step = existing.cycleStepAdvanced
         }
@@ -89,7 +91,9 @@ public final class WindowStateStore {
     /// about its current layout and must not pretend otherwise.
     ///
     /// Read-only with respect to the cycle: unlike `cycleStep`, this never
-    /// advances anything.
+    /// advances anything. It also deliberately does not update LRU recency —
+    /// every caller follows this with `record`, which touches the key, so
+    /// touching here would be redundant.
     public func retainedPlacement(for key: WindowKey, currentFrame: CGRect) -> (action: Action, step: Int)? {
         guard let state = states[key], isOurs(state, comparedTo: currentFrame) else { return nil }
         return (state.lastAction, state.step)
