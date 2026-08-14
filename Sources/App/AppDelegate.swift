@@ -5,10 +5,12 @@ import Hotkeys
 import WindowKit
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let hotkeys = HotkeyManager()
     private let store = WindowStateStore()
     private var statusItem: NSStatusItem?
+    /// Held so `menuNeedsUpdate` can refresh it without rebuilding the menu.
+    private weak var launchAtLoginItem: NSMenuItem?
     private var router: ActionRouter!
     private let activeApplicationTracker = ActiveApplicationTracker(
         ownBundleIdentifier: Bundle.main.bundleIdentifier,
@@ -108,6 +110,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func rebuildMenu() {
         let menu = NSMenu()
+        // Without this, AppKit recomputes every item's enabled state from
+        // whether its target responds to the action, which silently discards
+        // the `isEnabled = false` set on the login item below.
+        menu.autoenablesItems = false
+        menu.delegate = self
 
         if !AccessibilityPermission.isGranted {
             let warning = NSMenuItem(
@@ -139,7 +146,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item.target = self
             item.representedObject = ActionBox(action: action)
             item.toolTip = shortcut.displayString
-            if let failure = hotkeys.failure(for: shortcut) {
+            // When the handler failed to install, every shortcut carries that
+            // same reason and the banner above already says so once. Repeating
+            // it on all 13 items buries the banner.
+            if !hotkeys.handlerInstallFailed, let failure = hotkeys.failure(for: shortcut) {
                 // Name the reason. "unavailable" gave the user no way to tell a
                 // bug in our keymap from SizeUp still holding the shortcut.
                 item.title += "  (\(failure.explanation))"
@@ -155,14 +165,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             keyEquivalent: ""
         )
         launch.target = self
-        launch.state = LaunchAtLogin.isEnabled ? .on : .off
-        // Disabled rather than hidden when the system says registration cannot
-        // succeed, so the option's absence is not mistaken for it being off.
-        launch.isEnabled = LaunchAtLogin.isSupported
-        if !LaunchAtLogin.isSupported {
-            launch.toolTip = "Move Sizeup2 to /Applications to enable this."
-        }
         menu.addItem(launch)
+        launchAtLoginItem = launch
+        refreshLaunchAtLoginItem()
 
         let quit = NSMenuItem(title: "Quit Sizeup2", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
@@ -181,6 +186,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
         )!
         NSWorkspace.shared.open(url)
+    }
+
+    /// Re-reads the login-item state from the system.
+    ///
+    /// Called on every menu open, not just at launch: the user can disable the
+    /// login item in System Settings, and a checkmark that kept claiming it was
+    /// on would be exactly the silent failure this feature exists to avoid.
+    private func refreshLaunchAtLoginItem() {
+        guard let item = launchAtLoginItem else { return }
+        let supported = LaunchAtLogin.isSupported
+        item.state = LaunchAtLogin.isEnabled ? .on : .off
+        // Disabled rather than hidden, so its absence is not mistaken for "off".
+        item.isEnabled = supported
+        item.toolTip = supported ? nil : "Move Sizeup2 to /Applications to enable this."
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        refreshLaunchAtLoginItem()
     }
 
     @objc private func toggleLaunchAtLogin() {

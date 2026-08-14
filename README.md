@@ -45,9 +45,10 @@ memory.
 > the normal split-rectangle icon) means one or more shortcuts could not be
 > claimed — open the menu to see which.
 >
-> **Launch-at-login is not implemented yet.** Sizeup2 must be started
-> manually after every reboot or logout; nothing currently keeps it running
-> across sessions.
+> **To start Sizeup2 automatically,** open the menu-bar menu and tick
+> **Open at Login**. This requires the app to live in `/Applications` — macOS
+> will not launch a login item from a build directory, and the menu item is
+> disabled with an explanatory tooltip when that is the case.
 
 ```
 make dev

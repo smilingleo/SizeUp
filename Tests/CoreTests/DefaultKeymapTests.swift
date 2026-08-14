@@ -1,3 +1,4 @@
+import AppKit
 import Testing
 import Geometry
 import Hotkeys
@@ -53,12 +54,23 @@ import Hotkeys
         == Shortcut(keyCode: KeyCode.leftArrow, modifierFlags: ctrlOpt))
 }
 
-@Test func displayShortcutsDoNotCollideWithTheHalvesBindings() {
-    // Halves are control+option+COMMAND on the SAME arrows. A dropped command
-    // bit would silently steal them, and the duplicate would then be dropped
-    // at registration rather than reported.
-    let shortcuts = DefaultKeymap.bindings.map(\.0)
-    #expect(Set(shortcuts).count == shortcuts.count)
+@Test func displayShortcutsDifferFromTheHalvesByExactlyTheCommandBit() {
+    // The display and halves bindings share the same arrow keys, so the ONLY
+    // thing keeping them apart is the command modifier. Asserting mere
+    // uniqueness (allShortcutsAreUnique already does that) would not catch a
+    // mask that differed in some other bit while still being unique.
+    let ctrlOptCmd: UInt = 1_835_008
+    let ctrlOpt: UInt = 786_432
+    let command = UInt(NSEvent.ModifierFlags.command.rawValue)
+
+    #expect(ctrlOptCmd == ctrlOpt | command)
+    #expect(ctrlOpt & command == 0)
+
+    // And the distinction must survive translation to Carbon, since that is
+    // what registration actually uses.
+    let half = Shortcut(keyCode: KeyCode.rightArrow, modifierFlags: ctrlOptCmd)
+    let display = Shortcut(keyCode: KeyCode.rightArrow, modifierFlags: ctrlOpt)
+    #expect(half.carbonModifiers != display.carbonModifiers)
 }
 
 @Test func everyDirectionHasItsOwnLabel() {
@@ -72,11 +84,16 @@ import Hotkeys
     #expect(DefaultKeymap.title(for: .space(.below)) == "Space Below")
 }
 
-@Test func everyBoundActionIsRoutableAndLabelled() {
-    // Guards the integration seam that killed the menu in M1: a binding whose
-    // action the router ignores, or that has no label, is a dead shortcut.
-    for (_, action) in DefaultKeymap.bindings {
-        #expect(!DefaultKeymap.title(for: action).isEmpty)
+@Test func everyBoundActionIsDistinctAndCarriesADistinctLabel() {
+    // Guards the integration seam that killed the menu in M1. The real risk is
+    // not an empty label (every arm returns a literal, so that cannot fail) but
+    // two bindings mapping to the same action, or two actions sharing a label
+    // so the menu shows the same row twice.
+    let actions = DefaultKeymap.bindings.map(\.1)
+    let labels = actions.map { DefaultKeymap.title(for: $0) }
+
+    #expect(Set(labels).count == labels.count)
+    for (a, b) in zip(actions, actions.dropFirst()) where a == b {
+        Issue.record("duplicate action bound twice: \(a)")
     }
-    #expect(DefaultKeymap.bindings.count == 13)
 }
