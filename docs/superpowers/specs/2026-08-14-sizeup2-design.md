@@ -18,9 +18,9 @@ Read from `~/Library/Preferences/com.irradiatedsoftware.SizeUp.plist`:
 |---|---|---|
 | Halves: left / right / up / down | ⌃⌥⌘ + arrows | 1835008 |
 | Quarters: four corners | ⌃⌥⇧ + arrows (see below) | 917504 |
-| Full screen | ⌃⌥⌘ + F | 1835008 |
-| Center | ⌃⌥⌘ + C | 1835008 |
-| Snap Back (restore previous frame) | ⌃⌥⌘ + ` | 1835008 |
+| Full screen | ⌃⌥⌘ + M (keycode 46) | 1835008 |
+| Center | ⌃⌥⌘ + C (keycode 8) | 1835008 |
+| Snap Back (restore previous frame) | ⌃⌥⌘ + / (keycode 44) | 1835008 |
 | Next / previous monitor | ⌃⌥ + ← / → | 786432 |
 | Move to space: next / prev / above / below | ⌃⌘ + arrows | 1310720 |
 
