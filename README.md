@@ -107,7 +107,7 @@ run.
 
 ## Status
 
-Milestones M1 to M3 are complete:
+Milestones M1 to M4 are complete:
 
 - **M1** — single-display placement: halves, quarters, full screen, centre, snap back, and a status-bar
   menu that mirrors every shortcut and names any shortcut another app has already claimed.
@@ -116,13 +116,26 @@ Milestones M1 to M3 are complete:
   anything else is mapped proportionally.
 - **M3** — settings, persistence, and a Preferences window, which is what finally makes gaps, size
   cycling, and the skip list reachable.
+- **M4** — rebindable shortcuts, and importing them from an existing SizeUp installation.
 
 Not yet implemented:
 
-- **M4** — rebindable shortcuts, and then importing settings from an existing SizeUp installation.
-  (The import waits for rebinding because there is nowhere to put an imported binding until then. The
-  default keymap already reproduces the author's SizeUp configuration exactly.)
-- **M5** — macOS Spaces (`Next Space` / `Other Space`). Keep SizeUp installed for these until then.
+- **M5** — macOS Spaces (`Next Space` / `Previous Space`). Keep SizeUp installed for these until then.
+  SizeUp's four Spaces shortcuts *do* import, but they cannot fire yet, and the import says so.
+
+### Shortcuts
+
+Every shortcut can be changed under **Settings → Shortcuts**, or cleared entirely if you need the key
+for something else. Recording releases Sizeup2's global hotkeys for as long as the recorder is
+listening — otherwise pressing the shortcut you want to replace would just perform its action, since a
+registered hotkey is consumed before any application sees it.
+
+If the shortcut you record is already used by another action, that action loses it and the window says
+which one. Two actions cannot share a key: macOS would simply refuse the second one, silently and in an
+order you cannot predict.
+
+**Import Shortcuts from SizeUp…** in the menu reads `~/Library/Preferences/com.irradiatedsoftware.SizeUp.plist`
+and adopts all seventeen of its bindings. The menu item is disabled if that file is not there.
 
 Known not to work: **Open at Login**. It is implemented, but macOS will not register an ad-hoc-signed
 app as a login item at any location. Add Sizeup2 under System Settings → General → Login Items instead.

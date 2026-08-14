@@ -1,4 +1,4 @@
-# Deferred Findings — carried out of M1, updated after M2
+# Deferred Findings — carried out of M1, updated after M2, M3 and M4
 
 Every item below was found by review during M1 and deliberately **not** fixed then. The M1 execution
 ledger lives in `.superpowers/`, which is gitignored, so this file is the durable record. Each item
@@ -99,14 +99,47 @@ discovering.
 **The skip list matches bundle identifiers exactly, with no wildcards.**
 Adequate for the stated use, but there is no way to skip, say, every JetBrains IDE without listing each.
 
-## For M4 (Spaces)
+## Closed in M4
 
-**`SpaceMover` has a viable seam but needs a wider `WindowHandle`.**
-`.space` is a first-class `Action` case and `ActionRouter` already short-circuits it, so the
-injection point is obvious. But drag simulation needs *screen* coordinates and a title-bar point —
-capability `WindowHandle` does not expose (no `titleBarPoint`, no raw element access). M4 will have
-to widen `WindowHandle` or hand `SpaceMover` the `AXUIElement` directly. Plan for it rather than
-discovering it.
+**`keyName`'s `"?"` fallback is untested and silently meaningless.** — closed.
+Key names now come from the active keyboard layout via `UCKeyTranslate`, with a static table for the
+keys layouts misreport. The fallback is `"Key N"`, which at least says which key it could not name;
+`"?"` was indistinguishable from a key that really is `?`.
+
+**Shortcuts were compile-time literals.** — closed. Every action is rebindable and can be unbound.
+
+**Spaces was expected to need a wider `WindowHandle` for drag simulation.** — closed, and the premise
+was wrong. Measured, not reasoned about: `_AXUIElementGetWindow` yields a real `CGWindowID` from an
+`AXUIElement` in one `dlsym`, and `SLSMoveWindowsToManagedSpace` moves a window with SIP enabled and no
+scripting addition. No drag, no title-bar point, no screen coordinates. The probes are kept in
+`.superpowers/sdd/2026-08-14-sizeup2-m4/`.
+
+## Deferred out of M4
+
+**The import writes overrides for actions whose bindings already equal the defaults.**
+`Sources/Config/SizeUpImport.swift` — importing the author's own plist produces seventeen overrides, of
+which thirteen are byte-identical to what `DefaultKeymap` already ships. Harmless, and arguably correct
+since the user explicitly asked for SizeUp's bindings, but it means a future release that improves a
+default will not reach anyone who imported. Filtering would require `Config` to know `DefaultKeymap`,
+which the layering forbids; the alternative is to filter in `App`, untested.
+
+**`Shortcut` canonicalises modifier flags, so a settings file can round-trip to a different value.**
+`Sources/Hotkeys/Shortcut.swift` — a hand-edited `"modifierFlags": 1835049` is loaded, canonicalised to
+1835008, and re-persisted as 1835008. Correct, and the only way the type can be compared reliably, but
+it does mean the file is not always byte-stable across a load/save cycle.
+
+**A recorded shortcut is not checked against the shortcuts of *other* applications.**
+`Sources/App/ShortcutsView.swift` — the recorder prevents Sizeup2 colliding with itself, but binding
+something macOS already owns (⌃↑ for Mission Control, say) records happily and then fails at
+registration. `HotkeyManager.registrationFailures` reports it in the status menu afterwards, so it is
+visible, but the recorder could refuse it up front. There is no API to enumerate other apps' hotkeys, so
+this would mean a hardcoded list of system shortcuts.
+
+**The Shortcuts tab has no automated coverage.**
+The decision logic is in `KeymapResolver` and tested; the view, the event monitor, and the
+suspend/resume pairing are not, in line with the rest of `App`. The suspend/resume pairing in particular
+is only verifiable by hand, and its failure mode — every shortcut silently released — is nasty. It is on
+the M4 manual checklist.
 
 ## Before open-sourcing
 
