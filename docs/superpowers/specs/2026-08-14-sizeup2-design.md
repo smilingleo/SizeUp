@@ -240,5 +240,9 @@ make dev      # build, assemble .app, ad-hoc sign with fixed bundle ID, install 
 - **M2** — Multi-display next/previous, status item menu, Preferences window, SizeUp
   import. The replacement now covers everything except Spaces; SizeUp is kept installed
   for those four shortcuts only.
-- **M3** — Cycling, gaps, skip list.
-- **M4** — Spaces, behind a feature flag.
+- **M3** — Cycling, gaps, skip list: the configuration boundary that makes all three reachable.
+- **M4** — Shortcut rebinding, then the SizeUp plist import. *(Reordered during M3 planning: the
+  import is only meaningful once there is somewhere for imported bindings to go. Stripped of
+  shortcuts the SizeUp plist contains nothing but vanity counters, and its shortcuts are already
+  replicated exactly in `DefaultKeymap`.)*
+- **M5** — Spaces, behind a feature flag.

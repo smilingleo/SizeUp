@@ -24,7 +24,10 @@ public final class WindowStateStore {
     private var recency: [WindowKey] = []
     private let capacity: Int
 
-    public init(capacity: Int = 50) {
+    /// 200 rather than 50: the memory is trivial, and evicting a Snap Back
+    /// origin the user still remembers is far more annoying than the bytes.
+    /// `touch()` is O(n), which is irrelevant at either size.
+    public init(capacity: Int = 200) {
         self.capacity = max(1, capacity)
     }
 

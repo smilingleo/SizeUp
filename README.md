@@ -82,18 +82,50 @@ silently breaks the app and forces the user to re-grant permission. The
 build script ad-hoc signs with this identifier pinned so the grant survives
 rebuilds.
 
+## Settings
+
+Open **Settings…** from the menu-bar menu, or press ⌘, while the menu is open.
+
+**Gaps.** "Between windows" is the space left between two tiled windows; "Screen edges" is the inset
+from the edge of the usable screen area. Both default to 0, so out of the box windows tile flush, and
+both are capped at 100 — a large enough gap would otherwise reduce a window to zero width.
+
+**Size cycling.** Choose which fractions a repeated press cycles through: ½, ⅓, ⅔, ¼, ¾, applied in
+that order. **Cycling is off by default** — only ½ is selected, so pressing ⌃⌥⌘← twice leaves the
+window a left half, exactly as SizeUp behaved. Check a second size to turn cycling on. Moving a window
+to another display deliberately does *not* advance the cycle.
+
+**Skip list.** Applications Sizeup2 leaves alone entirely. Add them by name from a list of what is
+running, rather than by typing bundle identifiers.
+
+Settings are stored as JSON at `~/Library/Application Support/Sizeup2/settings.json`. The file is
+written pretty-printed with sorted keys so it can be edited by hand, which is the way to reach a size
+the Settings window does not offer — add e.g. `{ "columns": 5, "occupied": 2 }` to `cycle` for a 2/5
+step. Hand-edited sizes are preserved when you use the Settings window, and it will tell you they are
+there. A missing or corrupt file is not an error: the app starts on defaults rather than refusing to
+run.
+
 ## Status
 
-This is milestone M1: single-display window placement, halves, quarters,
-full screen, center, and snap back, plus a status-bar menu that mirrors
-every shortcut and flags any shortcut another app has already claimed.
+Milestones M1 to M3 are complete:
 
-Not yet implemented (future milestones):
-- Multi-display cycling (`Next Display` / `Previous Display`)
-- macOS Spaces (`Next Space` / `Other Space`)
-- User-configurable keymaps and preferences
-- Importing settings from an existing SizeUp installation
-- Gaps between windows and multi-span cycling beyond a single half
+- **M1** — single-display placement: halves, quarters, full screen, centre, snap back, and a status-bar
+  menu that mirrors every shortcut and names any shortcut another app has already claimed.
+- **M2** — multi-display moves (`Next Display` / `Previous Display`). A window we tiled keeps its exact
+  layout on arrival, because the placement is recomputed on the destination display rather than scaled;
+  anything else is mapped proportionally.
+- **M3** — settings, persistence, and a Preferences window, which is what finally makes gaps, size
+  cycling, and the skip list reachable.
+
+Not yet implemented:
+
+- **M4** — rebindable shortcuts, and then importing settings from an existing SizeUp installation.
+  (The import waits for rebinding because there is nowhere to put an imported binding until then. The
+  default keymap already reproduces the author's SizeUp configuration exactly.)
+- **M5** — macOS Spaces (`Next Space` / `Other Space`). Keep SizeUp installed for these until then.
+
+Known not to work: **Open at Login**. It is implemented, but macOS will not register an ad-hoc-signed
+app as a login item at any location. Add Sizeup2 under System Settings → General → Login Items instead.
 
 ## Development
 

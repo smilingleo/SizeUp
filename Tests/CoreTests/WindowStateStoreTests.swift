@@ -197,3 +197,24 @@ private let leftHalf = CGRect(x: 0, y: 0, width: 1680, height: 1860)
                  previousFrame: CGRect(x: 1, y: 1, width: 10, height: 10), step: -5)
     #expect(store.retainedPlacement(for: key, currentFrame: applied)?.step == 0)
 }
+
+@MainActor
+@Test func theDefaultCapacityHoldsFarMoreWindowsThanAnyoneOpens() {
+    // Capacity is private, so this is asserted behaviourally: with the previous
+    // default of 50, the first window's Snap Back origin would have been evicted
+    // by the 51st. Losing an origin the user still remembers is worse than the
+    // handful of bytes it costs to keep.
+    let store = WindowStateStore()
+    let first = WindowKey(pid: 1, elementHash: 1)
+    let origin = CGRect(x: 10, y: 20, width: 300, height: 200)
+    store.record(key: first, action: .half(.left), achievedFrame: .zero, previousFrame: origin)
+
+    for index in 2...120 {
+        store.record(
+            key: WindowKey(pid: 1, elementHash: index),
+            action: .half(.left), achievedFrame: .zero, previousFrame: .zero
+        )
+    }
+
+    #expect(store.snapBackFrame(for: first) == origin)
+}

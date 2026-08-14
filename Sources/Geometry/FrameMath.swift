@@ -6,7 +6,13 @@ import CoreGraphics
 /// window placed at a non-finite position has nothing on screen left to
 /// drag back. Such values are reachable in practice, because frames are
 /// read from other processes and a hung application can report garbage.
-/// A negative size is rejected for the same reason.
+///
+/// A zero or negative size is rejected for the same reason, and this is not
+/// hypothetical. A gap of 100 — a value the Settings window itself offers —
+/// combined with a 12-column span, which the settings validator accepts,
+/// produces a zero-HEIGHT bottom half on a 1080p display. That was measured,
+/// after an earlier version of this comment claimed the configuration cap made
+/// it unreachable; it only ever checked two columns.
 extension CGRect {
     public var isSafeToApply: Bool {
         // `size.width`/`size.height` are the raw stored values. `rect.width`
@@ -14,7 +20,7 @@ extension CGRect {
         // accept a negative size.
         origin.x.isFinite && origin.y.isFinite
             && size.width.isFinite && size.height.isFinite
-            && size.width >= 0 && size.height >= 0
+            && size.width > 0 && size.height > 0
     }
 }
 
@@ -45,6 +51,24 @@ public func targetFrame(
     let usable = screen.visibleFrame.insetBy(dx: gaps.outer, dy: gaps.outer)
     guard usable.width > 0, usable.height > 0 else { return nil }
 
+    // Computed once and validated once, rather than trusting each arm. A large
+    // inner gap spread over many columns can consume the whole axis and leave an
+    // extent of zero, and a zero-size window has nothing left to grab. Refusing
+    // here means the caller does nothing at all, which is the right outcome:
+    // there is no sensible window to draw for that configuration.
+    guard let result = placement(for: action, in: usable, gaps: gaps, current: current, span: span),
+        result.width > 0, result.height > 0
+    else { return nil }
+    return result
+}
+
+private func placement(
+    for action: Action,
+    in usable: CGRect,
+    gaps: Gaps,
+    current: CGRect?,
+    span: Span
+) -> CGRect? {
     switch action {
     case .fullScreen:
         return usable

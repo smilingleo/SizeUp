@@ -1,4 +1,5 @@
 import AppKit
+import Config
 import Core
 import Geometry
 import Hotkeys
@@ -8,12 +9,17 @@ import WindowKit
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let hotkeys = HotkeyManager()
     private let store = WindowStateStore()
+    private let settings = SettingsStore(url: SettingsStore.defaultURL)
     private var statusItem: NSStatusItem?
     /// Held so `menuNeedsUpdate` can refresh it without rebuilding the menu.
     private weak var launchAtLoginItem: NSMenuItem?
     /// Surfaced in the login item's tooltip; an NSLog-only error is invisible.
     private var lastLaunchAtLoginError: String?
     private var router: ActionRouter!
+    /// Constructed lazily (see `showPreferences`) so it captures
+    /// `rebuildRouter` only once the router's dependencies are ready, and
+    /// reused thereafter so a second click reuses the same window.
+    private var preferencesWindow: PreferencesWindow?
     private let activeApplicationTracker = ActiveApplicationTracker(
         ownBundleIdentifier: Bundle.main.bundleIdentifier,
         ownProcessIdentifier: ProcessInfo.processInfo.processIdentifier,
@@ -21,17 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let screens = SystemScreenProvider()
-        router = ActionRouter(
-            screens: screens,
-            windows: AXWindowProvider(screens: screens) { [activeApplicationTracker] in
-                activeApplicationTracker.current
-            },
-            store: store,
-            gaps: .zero,
-            spans: [.half],
-            skipList: []
-        )
+        settings.load()
+        rebuildRouter()
 
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
@@ -53,6 +50,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         hotkeys.unregisterAll()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
+    }
+
+    /// Rebuilt rather than mutated when settings change.
+    ///
+    /// Every field of `ActionRouter` except the injected `WindowStateStore` is
+    /// configuration, so a fresh router with the same store is equivalent to
+    /// mutating six properties and cannot end up half-applied. Reusing `store`
+    /// is the point: a preferences change must not cost the user their Snap Back
+    /// origins.
+    private func rebuildRouter() {
+        let screens = SystemScreenProvider()
+        let current = settings.settings
+        router = ActionRouter(
+            screens: screens,
+            windows: AXWindowProvider(screens: screens) { [activeApplicationTracker] in
+                activeApplicationTracker.current
+            },
+            store: store,
+            gaps: current.gaps.resolved,
+            spans: current.resolvedCycle,
+            skipList: Set(current.skippedBundleIdentifiers)
+        )
     }
 
     @objc private func applicationDidActivate(_ notification: Notification) {
@@ -164,6 +183,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        let settingsItem = NSMenuItem(
+            title: "Settings…",
+            action: #selector(showPreferences),
+            keyEquivalent: ","
+        )
+        settingsItem.keyEquivalentModifierMask = .command
+        settingsItem.target = self
+        // `autoenablesItems` is off (set where the menu is created), so every new item needs
+        // this set explicitly or it renders greyed out and unclickable.
+        // This exact bug has shipped twice already in this project (the
+        // shortcut menu, then the login item) — see the M3 plan.
+        settingsItem.isEnabled = true
+        menu.addItem(settingsItem)
+
         let launch = NSMenuItem(
             title: "Open at Login",
             action: #selector(toggleLaunchAtLogin),
@@ -184,6 +217,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func menuAction(_ sender: NSMenuItem) {
         guard let box = sender.representedObject as? ActionBox else { return }
         router.perform(box.action)
+    }
+
+    @objc private func showPreferences() {
+        if preferencesWindow == nil {
+            preferencesWindow = PreferencesWindow(store: settings) { [weak self] in
+                self?.rebuildRouter()
+            }
+        }
+        preferencesWindow?.show()
     }
 
     @objc private func openAccessibilitySettings() {
