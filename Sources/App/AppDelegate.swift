@@ -1,4 +1,5 @@
 import AppKit
+import Config
 import Core
 import Geometry
 import Hotkeys
@@ -8,6 +9,7 @@ import WindowKit
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let hotkeys = HotkeyManager()
     private let store = WindowStateStore()
+    private let settings = SettingsStore(url: SettingsStore.defaultURL)
     private var statusItem: NSStatusItem?
     /// Held so `menuNeedsUpdate` can refresh it without rebuilding the menu.
     private weak var launchAtLoginItem: NSMenuItem?
@@ -21,17 +23,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let screens = SystemScreenProvider()
-        router = ActionRouter(
-            screens: screens,
-            windows: AXWindowProvider(screens: screens) { [activeApplicationTracker] in
-                activeApplicationTracker.current
-            },
-            store: store,
-            gaps: .zero,
-            spans: [.half],
-            skipList: []
-        )
+        settings.load()
+        rebuildRouter()
 
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
@@ -53,6 +46,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         hotkeys.unregisterAll()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
+    }
+
+    /// Rebuilt rather than mutated when settings change.
+    ///
+    /// Every field of `ActionRouter` except the injected `WindowStateStore` is
+    /// configuration, so a fresh router with the same store is equivalent to
+    /// mutating six properties and cannot end up half-applied. Reusing `store`
+    /// is the point: a preferences change must not cost the user their Snap Back
+    /// origins.
+    private func rebuildRouter() {
+        let screens = SystemScreenProvider()
+        let current = settings.settings
+        router = ActionRouter(
+            screens: screens,
+            windows: AXWindowProvider(screens: screens) { [activeApplicationTracker] in
+                activeApplicationTracker.current
+            },
+            store: store,
+            gaps: current.gaps.resolved,
+            spans: current.resolvedCycle,
+            skipList: Set(current.skippedBundleIdentifiers)
+        )
     }
 
     @objc private func applicationDidActivate(_ notification: Notification) {
