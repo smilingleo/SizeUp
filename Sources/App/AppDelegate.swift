@@ -256,6 +256,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settingsItem.isEnabled = true
         menu.addItem(settingsItem)
 
+        let importItem = NSMenuItem(
+            title: "Import Shortcuts from SizeUp…",
+            action: #selector(importFromSizeUp),
+            keyEquivalent: ""
+        )
+        importItem.target = self
+        // Offered only when there is something to import. Shown-but-disabled
+        // rather than hidden, so a user who expected it can see that it exists
+        // and that SizeUp's preferences were not found, rather than concluding
+        // the feature is missing.
+        let sizeUpPresent = FileManager.default.fileExists(
+            atPath: SizeUpImporter.defaultURL.path
+        )
+        importItem.isEnabled = sizeUpPresent
+        if !sizeUpPresent {
+            importItem.toolTip = "No SizeUp preferences found at \(SizeUpImporter.defaultURL.path)"
+        }
+        menu.addItem(importItem)
+
         let launch = NSMenuItem(
             title: "Open at Login",
             action: #selector(toggleLaunchAtLogin),
@@ -300,6 +319,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             )
         }
         preferencesWindow?.show()
+    }
+
+    /// Confirms, imports, then reports — all three, because this replaces
+    /// shortcuts the user may have spent time setting up.
+    ///
+    /// An `NSAlert` rather than the tooltips M2 settled on for the login item:
+    /// that state changes behind the app's back and has no moment to interrupt,
+    /// whereas this is a destructive action the user just chose, so the one
+    /// moment they are definitely looking is now.
+    @objc private func importFromSizeUp() {
+        let result = SizeUpImporter.read(at: SizeUpImporter.defaultURL)
+
+        guard !result.overrides.isEmpty else {
+            let empty = NSAlert()
+            empty.messageText = "Nothing to import"
+            empty.informativeText = result.skipped.isEmpty
+                ? "SizeUp's preferences were found but contain no shortcuts."
+                : "None of SizeUp's \(result.skipped.count) shortcut entries could be read."
+            empty.runModal()
+            return
+        }
+
+        let confirm = NSAlert()
+        confirm.messageText = "Import \(result.overrides.count) shortcuts from SizeUp?"
+        confirm.informativeText =
+            "This replaces every shortcut currently set in Sizeup2. "
+            + "You can undo it with Restore Defaults in Settings, "
+            + "which returns to Sizeup2's own defaults rather than to whatever you had before."
+        confirm.addButton(withTitle: "Import")
+        confirm.addButton(withTitle: "Cancel")
+        guard confirm.runModal() == .alertFirstButtonReturn else { return }
+
+        let outcome = NSAlert()
+        do {
+            try settings.update { $0.shortcutOverrides = result.overrides }
+            rebuildRouter()
+            registerHotkeys()
+            outcome.messageText = "Imported \(result.overrides.count) shortcuts"
+            var detail = "Sizeup2 is now using SizeUp's shortcuts."
+            if !result.skipped.isEmpty {
+                // Naming them, because a partial import that looks total is how a
+                // user ends up pressing a key that will never work again.
+                detail += " Skipped \(result.skipped.count): "
+                    + result.skipped.sorted().joined(separator: ", ") + "."
+            }
+            // Spaces bindings import but cannot fire yet. Saying so here is the
+            // difference between a known limitation and an apparent bug.
+            if result.overrides.contains(where: { $0.action.hasPrefix("space.") }) {
+                detail += " SizeUp's Spaces shortcuts were imported but do nothing yet."
+            }
+            outcome.informativeText = detail
+        } catch {
+            outcome.messageText = "Could not save the imported shortcuts"
+            outcome.informativeText = error.localizedDescription
+            outcome.alertStyle = .warning
+        }
+        outcome.runModal()
     }
 
     @objc private func openAccessibilitySettings() {
