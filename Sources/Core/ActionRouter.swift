@@ -48,7 +48,10 @@ public struct ActionRouter {
                   )
             else { return }
 
-            let placement = retiled(current, from: source, to: destination, key: window.key)
+            let placement = retiled(
+                current, from: source, to: destination,
+                key: window.key, direction: direction
+            )
             guard let achieved = window.setFrame(placement.frame) else { return }
             store.record(key: window.key, action: placement.action,
                          achievedFrame: achieved, previousFrame: current,
@@ -58,7 +61,9 @@ public struct ActionRouter {
             // M4.
             return
 
-        default:
+        // Spelled out rather than `default:` so that a future `Action` case
+        // fails to compile instead of silently being treated as a placement.
+        case .half, .quarter, .center, .fullScreen:
             guard let screen = screen(containing: current) else { return }
             let step = store.cycleStep(for: window.key, action: action, currentFrame: current)
             let span = spans[step % spans.count]
@@ -129,7 +134,8 @@ public struct ActionRouter {
         _ current: CGRect,
         from source: ScreenInfo,
         to destination: ScreenInfo,
-        key: WindowKey
+        key: WindowKey,
+        direction: Direction
     ) -> (frame: CGRect, action: Action, step: Int) {
         // `isPlacement` is belt-and-braces: `targetFrame` already returns nil
         // for every non-placement action, so the `let exact` binding below
@@ -144,7 +150,12 @@ public struct ActionRouter {
            ) {
             return (exact, held.action, held.step)
         }
+        // `.display(direction)` is a placeholder meaning "we moved this, but we
+        // do not know its layout". Because it is not a placement action, the
+        // next display move maps proportionally again rather than trusting a
+        // layout we never established. The real direction is recorded rather
+        // than a hardcoded `.next` so the stored state is not a lie.
         let mapped = proportionalFrame(current, from: source, to: destination)
-        return (mapped, .display(.next), 0)
+        return (mapped, .display(direction), 0)
     }
 }

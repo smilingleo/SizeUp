@@ -10,8 +10,10 @@ here. What follows is only what was consciously left.
 ## Closed in M2
 
 - **`ScreenInfo.id` is an array index, not a stable display identity.** Now a `CGDirectDisplayID`
-  from `deviceDescription["NSScreenNumber"]`, with a synthetic fallback far above any real id so a
-  missing screen number cannot alias two displays. Ordering is a separate `spatiallyOrdered(_:)`
+  from `deviceDescription["NSScreenNumber"]`, with a synthetic fallback that keeps a missing
+  screen number from aliasing two displays. (The fallback is unlikely-to-collide, not
+  provably-collision-free: real display ids are opaque `UInt32`s in the tens of millions. The
+  original comment overclaimed this and has been corrected.) Ordering is a separate `spatiallyOrdered(_:)`
   helper sorting by `frame.minX`, then `minY`, tie-broken by id. Confirmed on real hardware that the
   built-in display reports id 4 and the external id 1 — so ids are neither array indices nor in
   spatial order, which makes the sort load-bearing rather than cosmetic.
@@ -135,3 +137,13 @@ store test that a false-negative chain check does not clobber `originalFrame`.
   removing the check in `ActionRouter.retiled` changes no behaviour, because `targetFrame` already
   returns nil for every non-placement action. It is kept because it states the intent at the point of
   the decision, and is documented as such so a future reader does not assume it is doing work.
+- **`proportionalFrame` ignores `gaps` while the exact-retile path applies them.** Moot today because
+  gaps default to zero and are not yet configurable. The moment M3 ships gaps, a hand-positioned
+  window moved between displays will sit flush while a tiled one is inset — visibly inconsistent.
+  Fix when gaps become reachable.
+- **`ActionRouter.perform` reads `screens.screens` twice per display move**, once inside
+  `screen(containing:)` and once for the neighbour list. Benign (a display vanishing between the two
+  reads yields nil and a no-op) but a single local snapshot would be one line and strictly better.
+- **Mirrored displays can report the same `NSScreenNumber` for two `NSScreen` entries.** In that case
+  the `firstIndex(where: { $0.id == current.id })` lookup picks whichever comes first. Harmless
+  because mirrored displays share a frame, so either answer places the window identically.

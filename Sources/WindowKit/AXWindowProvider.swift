@@ -139,9 +139,14 @@ public struct SystemScreenProvider: ScreenProviding {
         return Int(number.uint32Value)
     }
 
-    /// Used only if AppKit ever fails to report a screen number. Far above any
-    /// real `CGDirectDisplayID` so a synthetic id can never collide with a
-    /// real one and silently alias two displays together.
+    /// Used only if AppKit ever fails to report a screen number.
+    ///
+    /// This does NOT guarantee no collision with a real `CGDirectDisplayID` —
+    /// those are opaque `UInt32`s and are routinely in the tens or hundreds of
+    /// millions, so a real id could in principle land here. It only has to be a
+    /// value real ids are very unlikely to take, since the alternative (a
+    /// constant, or the bare index) would alias two screens to the same id and
+    /// make "next display" move a window to itself.
     private static let syntheticIDBase = 1_000_000
 
     /// The Accessibility origin is the top-left of whichever display has a

@@ -238,3 +238,33 @@ private let thirdDisplay = ScreenInfo(
     #expect(window.stored.width == 1500)
     #expect(store.retainedPlacement(for: window.key, currentFrame: window.stored)?.action == .half(.left))
 }
+
+@MainActor
+@Test func aWindowReportingAGarbageFrameIsLeftAlone() {
+    // A hung app can report a NaN frame through the Accessibility API. Such a
+    // frame must not be written back: a window at a non-finite position has
+    // nothing left on screen to drag. Nothing should be recorded either, or the
+    // store would claim a layout the window does not have.
+    let store = WindowStateStore()
+    let window = TestWindow(frame: CGRect(x: CGFloat.nan, y: 0, width: 800, height: 600))
+    let router = makeRouter(window: window, screens: [builtIn, external], store: store)
+
+    router.perform(.display(.next))
+
+    #expect(window.applied.isEmpty)
+    #expect(store.count == 0)
+}
+
+@MainActor
+@Test func theProportionalFallbackRecordsTheDirectionActuallyPressed() {
+    let store = WindowStateStore()
+    let window = TestWindow(frame: CGRect(x: 300, y: 300, width: 800, height: 600))
+    let router = makeRouter(
+        window: window, screens: [thirdDisplay, builtIn, external], store: store
+    )
+
+    router.perform(.display(.previous))
+
+    #expect(store.retainedPlacement(for: window.key, currentFrame: window.stored)?.action
+        == .display(.previous))
+}

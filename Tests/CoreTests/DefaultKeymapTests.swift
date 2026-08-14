@@ -55,22 +55,25 @@ import Hotkeys
 }
 
 @Test func displayShortcutsDifferFromTheHalvesByExactlyTheCommandBit() {
-    // The display and halves bindings share the same arrow keys, so the ONLY
-    // thing keeping them apart is the command modifier. Asserting mere
-    // uniqueness (allShortcutsAreUnique already does that) would not catch a
-    // mask that differed in some other bit while still being unique.
-    let ctrlOptCmd: UInt = 1_835_008
-    let ctrlOpt: UInt = 786_432
+    // Reads the masks OUT of DefaultKeymap. Asserting a relation among local
+    // literals would pass no matter what the keymap actually contained.
+    func mask(for action: Action) throws -> UInt {
+        try #require(DefaultKeymap.bindings.first { $0.1 == action }?.0).modifierFlags
+    }
+
+    let halfRight = try! mask(for: .half(.right))
+    let displayNext = try! mask(for: .display(.next))
     let command = UInt(NSEvent.ModifierFlags.command.rawValue)
 
-    #expect(ctrlOptCmd == ctrlOpt | command)
-    #expect(ctrlOpt & command == 0)
+    // Same arrow key, so the command bit is the only thing separating them.
+    #expect(halfRight == displayNext | command)
+    #expect(displayNext & command == 0)
 
     // And the distinction must survive translation to Carbon, since that is
     // what registration actually uses.
-    let half = Shortcut(keyCode: KeyCode.rightArrow, modifierFlags: ctrlOptCmd)
-    let display = Shortcut(keyCode: KeyCode.rightArrow, modifierFlags: ctrlOpt)
-    #expect(half.carbonModifiers != display.carbonModifiers)
+    let a = Shortcut(keyCode: KeyCode.rightArrow, modifierFlags: halfRight)
+    let b = Shortcut(keyCode: KeyCode.rightArrow, modifierFlags: displayNext)
+    #expect(a.carbonModifiers != b.carbonModifiers)
 }
 
 @Test func everyDirectionHasItsOwnLabel() {
@@ -92,8 +95,9 @@ import Hotkeys
     let actions = DefaultKeymap.bindings.map(\.1)
     let labels = actions.map { DefaultKeymap.title(for: $0) }
 
+    // Labels are a pure function of actions, so distinct labels implies
+    // distinct actions; both are asserted because a future `title(for:)` that
+    // returned the same string for two actions should fail here, loudly.
     #expect(Set(labels).count == labels.count)
-    for (a, b) in zip(actions, actions.dropFirst()) where a == b {
-        Issue.record("duplicate action bound twice: \(a)")
-    }
+    #expect(labels.count == DefaultKeymap.bindings.count)
 }

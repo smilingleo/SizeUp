@@ -44,6 +44,10 @@ final class TestWindow: WindowHandle {
 
     @discardableResult
     func setFrame(_ cocoaRect: CGRect) -> CGRect? {
+        // Mirrors AXWindow.setFrame's guard, so router-level tests can pin the
+        // milestone's only real safety mechanism instead of trusting the
+        // predicate's unit test and eyeballing the call site.
+        guard cocoaRect.isSafeToApply else { return nil }
         applied.append(cocoaRect)
         stored = CGRect(
             origin: cocoaRect.origin,

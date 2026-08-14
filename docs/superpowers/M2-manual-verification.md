@@ -12,7 +12,7 @@ Cross-display window placement cannot be verified automatically. It needs Access
 
 - [ ] **⌃⌥→** moves the focused window to the external display.
 - [ ] **⌃⌥←** moves it back to the built-in display.
-- [ ] Repeated **⌃⌥→** wraps around: with two displays it returns to where it started.
+- [ ] Repeated **⌃⌥→** wraps around: with two displays it returns to the display it started on. A *tiled* window returns to exactly its original frame; a hand-positioned one may drift by up to a point per hop, because the proportional mapping floors each time. That drift is expected.
 - [ ] These do **not** disturb the halves shortcuts, which are the same arrows plus ⌘. Press ⌃⌥⌘← and confirm you still get a left half rather than a display move.
 
 ## Exact retiling — the point of the milestone
@@ -25,8 +25,9 @@ Cross-display window placement cannot be verified automatically. It needs Access
 
 ## Behaviour that should NOT change
 
-- [ ] **A display move must not resize the window.** Tile to a left half, press ⌃⌥⌘← again to advance the size cycle, then ⌃⌥→. The window keeps its cycled proportion on the new display rather than jumping to a half or to the next step.
-- [ ] After that move, one more ⌃⌥⌘← advances to the **next** cycle step — not a repeat of the current one, and not a reset.
+- [ ] **A display move must not resize the window.** Tile to a left half, then ⌃⌥→, and confirm it is still a left half rather than some other proportion.
+
+  > **Note:** the shipped build configures a single size span, so pressing ⌃⌥⌘← repeatedly does **not** currently cycle through widths — you should see no size change, and that is correct, not a bug. Step preservation across a display move is therefore covered by automated tests only (`displayMoveReAppliesTheRetainedSpanNotTheNextOne`, verified by mutation testing to actually fail if the step is advanced or reset). This checklist item becomes manually observable once M3 makes the span list configurable.
 - [ ] **Snap Back** (⌃⌥⌘/) after a display move returns the window to its original pre-tiling size *and* to its original display.
 - [ ] A window you positioned **by hand** (never tiled) keeps roughly its relative position and size after ⌃⌥→ — it will not be pixel-exact, and that is correct.
 
@@ -42,6 +43,7 @@ Cross-display window placement cannot be verified automatically. It needs Access
 - [ ] The menu lists **Next Display** and **Previous Display**, with ⌃⌥→ / ⌃⌥← shown as their tooltips.
 - [ ] **With SizeUp still running**, quit and relaunch Sizeup2. Those two menu entries should read **"(claimed by another app)"** — not "(duplicate shortcut)", which would mean a bug in our own keymap instead. Quit SizeUp, relaunch Sizeup2, and confirm the suffix disappears.
 - [ ] **Open at Login** is ticked/unticked correctly and is **clickable only when the app is in `/Applications`** — running from `build/` it must appear greyed out with a tooltip. (Verified automatically during development, but worth one look.)
+- [ ] If macOS shows the item as **"Open at Login  (needs approval)"** with a dash rather than a tick, that is the `requiresApproval` state: registration worked but you must approve Sizeup2 under **System Settings → General → Login Items**. Do that and confirm the item becomes a normal tick.
 - [ ] Tick **Open at Login**, reboot, and confirm Sizeup2 starts with working shortcuts.
 - [ ] Untick it, reboot, and confirm it does not start. Then decide which you want.
 
