@@ -55,20 +55,42 @@ though quarters do not cycle. Harmless only because `targetFrame` ignores `span`
 centre, and full screen. M2's `retiled` is the first code to read a stored step back, so the
 assumption is now load-bearing and should be tightened when a second reader appears.
 
-## For M3 (preferences: gaps, cycle sizes, skip list)
+## Closed in M3
 
-**`Span.init` uses `precondition`, so bad user config would crash.**
-`Sources/Geometry/Span.swift` — only reachable from user configuration, which does not exist yet.
-When M3 parses spans, add a failable initializer at the config boundary rather than trapping.
+- **`Span.init` uses `precondition`, so bad user config would crash.** Configuration no longer reaches
+  it: `SpanSetting.resolved` validates `columns` and `occupied` and returns nil, so a typo in the
+  settings file yields a dropped cycle step rather than a trap. Pinned by
+  `aZeroColumnSpanIsRejectedRatherThanTrapping`.
+- **`ActionRouter` coerces an empty `spans` array to `[.half]`.** Still there, but no longer
+  load-bearing: `Settings.resolvedCycle` falls back to `[.half]` before the router is constructed, so
+  the router's coercion is now belt-and-braces rather than the only defence.
+- **`WindowStateStore` capacity may be too small.** Raised 50 → 200. The existing capacity test passed
+  an explicit `capacity: 2`, so the *default* was untested; `theDefaultCapacityHoldsFarMoreWindowsThanAnyoneOpens`
+  now pins it and fails if it returns to 50.
 
-**`ActionRouter` coerces an empty `spans` array to `[.half]`.**
-`Sources/Core/ActionRouter.swift` — a correct defensive default now, but it would mask a real wiring
-bug once M3 supplies span lists from config. Reject empty lists at config load instead.
+## Deferred out of M3
 
-**`WindowStateStore` capacity may be too small.**
-`Sources/Core/WindowStateStore.swift` — LRU capacity is 50 and `touch()` is O(n). The cost is
-irrelevant at n=50, but evicting a Snap Back origin the user still remembers is more annoying than
-the memory. Consider raising to ~200 in M3.
+**`proportionalFrame` ignores gaps — now a real inconsistency, not a hypothetical.**
+`Sources/Geometry/ProportionalFrame.swift` — carried from M2, where gaps were unreachable and this
+could not be observed. Now that gaps are configurable, a hand-positioned window moved between displays
+lands flush while a tiled one is inset. Fix by insetting the destination visible frame by `outer`
+before mapping. Left open because it needs a decision the plan did not make: whether an untiled window
+should be gapped at all, given we do not know it was ever meant to touch an edge.
+
+**`isSafeToApply` permits a zero-size rect.**
+`Sources/Geometry/FrameMath.swift` — a zero-width window is as ungrabbable as a non-finite one. Safety
+currently rests entirely on the gap clamp, which is the only reachable way to produce one (an inner gap
+of 500 on a 100pt display yields width 0, measured). If any other caller can produce a zero-size frame,
+this becomes reachable again. Deliberately not tightened in M3: M2 verified the guard in its present
+form, and the reachable cause is closed.
+
+**The gap cap of 100 is a judgement, not a derivation.**
+`Sources/Config/Settings.swift` — chosen because it keeps every placement non-degenerate on any display
+at least ~200pt wide, which is every real display. It is not derived from the display geometry, and a
+user who genuinely wants a 150pt gap on a 6K display cannot have one.
+
+**The skip list matches bundle identifiers exactly, with no wildcards.**
+Adequate for the stated use, but there is no way to skip, say, every JetBrains IDE without listing each.
 
 ## For M4 (Spaces)
 
