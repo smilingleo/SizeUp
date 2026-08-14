@@ -1,5 +1,20 @@
 import CoreGraphics
 
+/// Whether this rect is safe to hand to the Accessibility API.
+///
+/// A NaN or infinite frame is not merely wrong, it is unrecoverable: a
+/// window placed at a non-finite position has nothing on screen left to
+/// drag back. Such values are reachable in practice, because frames are
+/// read from other processes and a hung application can report garbage.
+/// A negative size is rejected for the same reason.
+extension CGRect {
+    public var isFinite: Bool {
+        origin.x.isFinite && origin.y.isFinite
+            && size.width.isFinite && size.height.isFinite
+            && size.width >= 0 && size.height >= 0
+    }
+}
+
 /// Computes where a window should go.
 ///
 /// Everything is in Cocoa coordinates: origin bottom-left, +Y upward.

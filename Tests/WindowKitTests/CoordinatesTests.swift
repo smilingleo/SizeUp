@@ -49,3 +49,16 @@ private let primary = CGRect(x: 0, y: 0, width: 3360, height: 1890)
     #expect(ax.origin.x == 512)
     #expect(ax.size == cocoa.size)
 }
+
+@Test func nonFiniteRectsAreRejected() {
+    #expect(CGRect(x: 0, y: 0, width: 100, height: 100).isFinite)
+    #expect(CGRect(x: -838, y: -100, width: 1, height: 1).isFinite)  // negative origin is legitimate
+
+    #expect(!CGRect(x: CGFloat.nan, y: 0, width: 100, height: 100).isFinite)
+    #expect(!CGRect(x: 0, y: CGFloat.nan, width: 100, height: 100).isFinite)
+    #expect(!CGRect(x: 0, y: 0, width: CGFloat.nan, height: 100).isFinite)
+    #expect(!CGRect(x: 0, y: 0, width: 100, height: CGFloat.nan).isFinite)
+    #expect(!CGRect(x: CGFloat.infinity, y: 0, width: 100, height: 100).isFinite)
+    #expect(!CGRect(x: 0, y: 0, width: -100, height: 100).isFinite)
+    #expect(!CGRect(x: 0, y: 0, width: 100, height: -100).isFinite)
+}

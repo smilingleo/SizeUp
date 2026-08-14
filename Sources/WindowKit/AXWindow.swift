@@ -35,6 +35,8 @@ public final class AXWindow: WindowHandle {
     /// applications with minimum sizes will not honour the request exactly.
     @discardableResult
     public func setFrame(_ cocoaRect: CGRect) -> CGRect? {
+        // Refuse rather than corrupt: see CGRect.isFinite.
+        guard cocoaRect.isFinite else { return nil }
         let target = axRect(fromCocoa: cocoaRect, primaryFrame: primaryFrame)
         writePoint(kAXPositionAttribute, target.origin)
         writeSize(kAXSizeAttribute, target.size)
