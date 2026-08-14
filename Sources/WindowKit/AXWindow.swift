@@ -1,6 +1,7 @@
 import ApplicationServices
 import CoreGraphics
 import Foundation
+import Geometry
 
 /// A window addressed through the Accessibility API.
 public final class AXWindow: WindowHandle {
@@ -35,6 +36,8 @@ public final class AXWindow: WindowHandle {
     /// applications with minimum sizes will not honour the request exactly.
     @discardableResult
     public func setFrame(_ cocoaRect: CGRect) -> CGRect? {
+        // Refuse rather than corrupt: see CGRect.isSafeToApply.
+        guard cocoaRect.isSafeToApply else { return nil }
         let target = axRect(fromCocoa: cocoaRect, primaryFrame: primaryFrame)
         writePoint(kAXPositionAttribute, target.origin)
         writeSize(kAXSizeAttribute, target.size)

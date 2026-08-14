@@ -26,4 +26,19 @@ public enum Action: Sendable, Equatable {
         if case .half = self { return true }
         return false
     }
+
+    /// Whether this action describes a layout that can be recomputed on a
+    /// different display and produce the same visual result.
+    ///
+    /// Used when moving a window between displays: a window still sitting
+    /// where we tiled it gets its action recomputed on the destination, which
+    /// tiles exactly, rather than scaled proportionally, which can leave a
+    /// one-point seam. `snapBack` restores a remembered frame and the moves
+    /// describe a transition, so neither can be recomputed.
+    public var isPlacement: Bool {
+        switch self {
+        case .half, .quarter, .center, .fullScreen: return true
+        case .snapBack, .display, .space: return false
+        }
+    }
 }

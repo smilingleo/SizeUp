@@ -41,11 +41,29 @@ public struct ActionRouter {
             store.record(key: window.key, action: .snapBack,
                          achievedFrame: achieved, previousFrame: current)
 
-        case .display, .space:
-            // M2 and M4.
+        case .display(let direction):
+            guard let source = screen(containing: current),
+                  let destination = neighbouringScreen(
+                      from: source, in: screens.screens, direction: direction
+                  )
+            else { return }
+
+            let placement = retiled(
+                current, from: source, to: destination,
+                key: window.key, direction: direction
+            )
+            guard let achieved = window.setFrame(placement.frame) else { return }
+            store.record(key: window.key, action: placement.action,
+                         achievedFrame: achieved, previousFrame: current,
+                         step: placement.step)
+
+        case .space:
+            // M4.
             return
 
-        default:
+        // Spelled out rather than `default:` so that a future `Action` case
+        // fails to compile instead of silently being treated as a placement.
+        case .half, .quarter, .center, .fullScreen:
             guard let screen = screen(containing: current) else { return }
             let step = store.cycleStep(for: window.key, action: action, currentFrame: current)
             let span = spans[step % spans.count]
@@ -101,5 +119,43 @@ public struct ActionRouter {
     private func overlap(_ a: CGRect, _ b: CGRect) -> CGFloat {
         let i = a.intersection(b)
         return i.isNull ? 0 : i.width * i.height
+    }
+
+    /// Where a window should land on `destination`, and what to record for it.
+    ///
+    /// A window still sitting exactly where we tiled it has its action
+    /// recomputed on the destination display, which tiles exactly. Anything
+    /// else — never tiled by us, or moved by the user since — is mapped
+    /// proportionally, which is approximate but never wrong about intent.
+    ///
+    /// The recorded step is preserved rather than advanced: moving a window to
+    /// another display is not a repeat press, and must not resize it.
+    private func retiled(
+        _ current: CGRect,
+        from source: ScreenInfo,
+        to destination: ScreenInfo,
+        key: WindowKey,
+        direction: Direction
+    ) -> (frame: CGRect, action: Action, step: Int) {
+        // `isPlacement` is belt-and-braces: `targetFrame` already returns nil
+        // for every non-placement action, so the `let exact` binding below
+        // would fall through anyway. It is kept because it states the intent at
+        // the point of the decision, and because it keeps this correct if
+        // `targetFrame` ever grows a case for one of those actions.
+        if let held = store.retainedPlacement(for: key, currentFrame: current),
+           held.action.isPlacement,
+           let exact = targetFrame(
+               for: held.action, on: destination, gaps: gaps,
+               current: current, span: spans[held.step % spans.count]
+           ) {
+            return (exact, held.action, held.step)
+        }
+        // `.display(direction)` is a placeholder meaning "we moved this, but we
+        // do not know its layout". Because it is not a placement action, the
+        // next display move maps proportionally again rather than trusting a
+        // layout we never established. The real direction is recorded rather
+        // than a hardcoded `.next` so the stored state is not a lie.
+        let mapped = proportionalFrame(current, from: source, to: destination)
+        return (mapped, .display(direction), 0)
     }
 }

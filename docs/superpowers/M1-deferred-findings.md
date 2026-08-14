@@ -1,4 +1,4 @@
-# Deferred Findings — carried out of M1
+# Deferred Findings — carried out of M1, updated after M2
 
 Every item below was found by review during M1 and deliberately **not** fixed then. The M1 execution
 ledger lives in `.superpowers/`, which is gitignored, so this file is the durable record. Each item
@@ -7,38 +7,48 @@ has a triage decision from the broad final review.
 Items judged "fix now" during M1 were fixed in the two post-review fix waves and are **not** listed
 here. What follows is only what was consciously left.
 
-## For M2 (multi-display moves)
+## Closed in M2
 
-**`ScreenInfo.id` is an array index, not a stable display identity.**
-`Sources/WindowKit/AXWindowProvider.swift` — `id` is the `NSScreen.screens` index. Indices are not
-stable across sleep/wake, resolution changes, or replug, and index order is not spatial order. M2's
-next/previous-display actions need `deviceDescription[.init("NSScreenNumber")]` → `CGDirectDisplayID`
-for identity, and a sort by `frame.minX` for ordering. Worth doing early — there is exactly one
-producer of `ScreenInfo` today, so the churn is small now and grows later.
+- **`ScreenInfo.id` is an array index, not a stable display identity.** Now a `CGDirectDisplayID`
+  from `deviceDescription["NSScreenNumber"]`, with a synthetic fallback that keeps a missing
+  screen number from aliasing two displays. (The fallback is unlikely-to-collide, not
+  provably-collision-free: real display ids are opaque `UInt32`s in the tens of millions. The
+  original comment overclaimed this and has been corrected.) Ordering is a separate `spatiallyOrdered(_:)`
+  helper sorting by `frame.minX`, then `minY`, tie-broken by id. Confirmed on real hardware that the
+  built-in display reports id 4 and the external id 1 — so ids are neither array indices nor in
+  spatial order, which makes the sort load-bearing rather than cosmetic.
+- **`registrationFailures` does not say *why* a shortcut failed.** Now `[RegistrationFailure]`, each
+  carrying `.alreadyClaimedByThisApp`, `.rejectedBySystem(OSStatus)`, or `.handlerInstallFailed`, and
+  the menu names the reason instead of saying "unavailable". The `OSStatus` is also logged, since
+  `explanation` deliberately omits it.
+- **`DefaultKeymap.title(for:)` has catch-all `.display` / `.space` arms.** All eight direction cases
+  are now spelled out, so a future `Direction` case fails to compile rather than acquiring a wrong
+  label.
+- **Launch at login is not implemented.** Now an "Open at Login" menu item over
+  `SMAppService.mainApp`, disabled with a tooltip when the bundle is somewhere macOS will not launch
+  from. Fixing this exposed a second bug of M1's own kind: `NSMenu.autoenablesItems` defaults to
+  true, so the manual `isEnabled = false` was silently discarded and the item stayed clickable.
+  Verified through accessibility scripting rather than by reading the code.
+
+## Still open for M2's successors
 
 **Display-overlap tie-breaking is undocumented.**
-`Sources/Core/ActionRouter.swift` — `max(by:)` keeps the *first* maximum, so a window split exactly
-evenly across two displays lands on the earlier screen. Deterministic and defensible, but M2's
-display switching depends on it. Add a comment and a test when it matters.
-
-**`registrationFailures` does not say *why* a shortcut failed.**
-`Sources/Hotkeys/HotkeyManager.swift` — a shortcut rejected because our own keymap already claimed
-it is reported identically to one another app owns. Today a duplicate keymap entry is misreported as
-"another app owns it". A preferences UI needs the real reason to write a useful error.
+`Sources/Core/ActionRouter.swift` — `screen(containing:)` keeps the largest `frame`-area overlap, so
+a window 51% on display B is treated as being on B and "Next Display" moves it past the display the
+user perceives it on. Now genuinely exercised by display moves, but still has no dedicated test, and
+only becomes visible with three or more displays. Left open deliberately: the two-display case that
+matters daily is unaffected.
 
 **`keyName`'s `"?"` fallback is untested and silently meaningless.**
-`Sources/Hotkeys/Shortcut.swift` — fine while `KeyCode` is a closed internal set. The moment
-preferences allow arbitrary keys, use `TISCopyCurrentKeyboardLayoutInputSource` / `UCKeyTranslate`
-rather than growing the switch.
+`Sources/Hotkeys/Shortcut.swift` — unchanged in M2, because nothing yet lets the user bind an
+arbitrary key. It becomes user-visible the moment M3's preferences do, at which point use
+`TISCopyCurrentKeyboardLayoutInputSource` / `UCKeyTranslate` rather than growing the switch.
 
-**`DefaultKeymap.title(for:)` has catch-all `.display` / `.space` arms.**
-`Sources/Core/DefaultKeymap.swift` — `Direction` has four cases, so a future `.display(.above)`
-binding would silently be labelled "Previous Display" with no compiler warning. Make the arms
-explicit when those actions ship.
-
-**Launch at login is not implemented.**
-The spec lists `SMAppService`. Until then the app must be started by hand after every reboot, which
-the README now states plainly.
+**`record`'s implicit cycle advance does not check `action.cycles`.**
+`Sources/Core/WindowStateStore.swift` — pressing a quarter shortcut twice stores `step = 1` even
+though quarters do not cycle. Harmless only because `targetFrame` ignores `span` for quarters,
+centre, and full screen. M2's `retiled` is the first code to read a stored step back, so the
+assumption is now load-bearing and should be tightened when a second reader appears.
 
 ## For M3 (preferences: gaps, cycle sizes, skip list)
 
@@ -76,7 +86,7 @@ flag before publishing.
 
 - **`CFGetTypeID` + `unsafeDowncast` appears twice** (`AXWindow.swift`, `AXWindowProvider.swift`) for
   two different CF types. Both correct. Extract a shared generic helper only if a third appears.
-- **`Tests/WindowKitTests` and `Tests/CoreTests` each define their own window fake.** Swift test
+- **`Tests/WindowKitTests` and `Tests/CoreTests` each define their own window fake.** Still true ACROSS targets. Within `CoreTests`, M2 merged two same-named copies that had already diverged (one echoed the requested frame, one simulated a minimum size) into `Tests/CoreTests/RouterFixtures.swift`. Swift test
   targets cannot share helpers without a separate support target, which is not worth it for two
   small fakes. **Do not extract these** — the duplication is deliberate.
 - **Raw modifier integers (`1835008`, `917504`) appear in both `DefaultKeymap` and its test.** The
@@ -112,3 +122,28 @@ The manual matrix in `M1-manual-verification.md` is the substitute for all of th
 run and passed. Cheap additions worth making if this layer ever misbehaves: a fake window that
 returns a frame a fraction of a point off the request (proving the tolerance comparison), and a
 store test that a false-negative chain check does not clobber `originalFrame`.
+
+## Added by M2
+
+- **`LaunchAtLogin` has no automated coverage.** `SMAppService` talks to a system daemon and cannot
+  be exercised from `swift test`. Its behaviour is pinned by the M2 manual checklist and by one
+  runtime check through accessibility scripting, not by a unit test.
+- **`proportionalFrame`'s exact full-frame round-trip assumes integral display dimensions.**
+  `relativeWidth` is exactly `1.0` when the frame equals the source visible frame, so the multiply is
+  exact — but the subsequent floor truncates if a destination `visibleFrame` dimension is itself
+  fractional. macOS points-space visible frames are conventionally whole numbers, so this is safe in
+  practice; the assumption is stated in the doc comment rather than enforced.
+- **`Action.isPlacement` is defence-in-depth, not load-bearing.** Mutation testing showed that
+  removing the check in `ActionRouter.retiled` changes no behaviour, because `targetFrame` already
+  returns nil for every non-placement action. It is kept because it states the intent at the point of
+  the decision, and is documented as such so a future reader does not assume it is doing work.
+- **`proportionalFrame` ignores `gaps` while the exact-retile path applies them.** Moot today because
+  gaps default to zero and are not yet configurable. The moment M3 ships gaps, a hand-positioned
+  window moved between displays will sit flush while a tiled one is inset — visibly inconsistent.
+  Fix when gaps become reachable.
+- **`ActionRouter.perform` reads `screens.screens` twice per display move**, once inside
+  `screen(containing:)` and once for the neighbour list. Benign (a display vanishing between the two
+  reads yields nil and a no-op) but a single local snapshot would be one line and strictly better.
+- **Mirrored displays can report the same `NSScreenNumber` for two `NSScreen` entries.** In that case
+  the `firstIndex(where: { $0.id == current.id })` lookup picks whichever comes first. Harmless
+  because mirrored displays share a frame, so either answer places the window identically.

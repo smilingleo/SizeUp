@@ -1,6 +1,41 @@
 import Carbon.HIToolbox
 import Foundation
 
+/// Why a shortcut could not be claimed.
+///
+/// The distinction is user-facing. A conflict with our own keymap is a bug to
+/// fix in the keymap. A system rejection almost always means another running
+/// application already owns that combination — for this app that is usually
+/// SizeUp itself, which the user can just quit. Reporting only "unavailable"
+/// leaves them with no way to tell those apart.
+public struct RegistrationFailure: Sendable, Equatable {
+    public enum Reason: Sendable, Equatable {
+        /// Our own keymap already claimed this exact combination.
+        case alreadyClaimedByThisApp
+        /// Carbon refused it; another application almost certainly owns it.
+        case rejectedBySystem(OSStatus)
+        /// The shared event handler never installed, so nothing can bind.
+        case handlerInstallFailed
+    }
+
+    public let shortcut: Shortcut
+    public let reason: Reason
+
+    public init(shortcut: Shortcut, reason: Reason) {
+        self.shortcut = shortcut
+        self.reason = reason
+    }
+
+    /// A short phrase suitable for appending to a menu item title.
+    public var explanation: String {
+        switch reason {
+        case .alreadyClaimedByThisApp: return "duplicate shortcut"
+        case .rejectedBySystem: return "claimed by another app"
+        case .handlerInstallFailed: return "hotkeys unavailable"
+        }
+    }
+}
+
 /// Registers global keyboard shortcuts through Carbon.
 ///
 /// One `EventHandler` is installed for the process; each hotkey gets a unique
@@ -71,7 +106,12 @@ public final class HotkeyManager {
 
     /// Shortcuts that could not be registered, usually because another
     /// application or the system already owns them.
-    public private(set) var registrationFailures: [Shortcut] = []
+    public private(set) var registrationFailures: [RegistrationFailure] = []
+
+    /// The failure recorded for `shortcut`, if it could not be claimed.
+    public func failure(for shortcut: Shortcut) -> RegistrationFailure? {
+        registrationFailures.first { $0.shortcut == shortcut }
+    }
 
     /// Set once if the process-wide Carbon event handler itself failed to
     /// install. When this is true, `registrationFailures` will already
@@ -95,12 +135,14 @@ public final class HotkeyManager {
     @discardableResult
     public func register(_ shortcut: Shortcut, handler: @escaping @MainActor () -> Void) -> Bool {
         guard installEventHandlerIfNeeded() else {
-            registrationFailures.append(shortcut)
+            registrationFailures.append(
+                RegistrationFailure(shortcut: shortcut, reason: .handlerInstallFailed))
             return false
         }
 
         guard !claimed.contains(shortcut) else {
-            registrationFailures.append(shortcut)
+            registrationFailures.append(
+                RegistrationFailure(shortcut: shortcut, reason: .alreadyClaimedByThisApp))
             return false
         }
 
@@ -119,7 +161,12 @@ public final class HotkeyManager {
         )
 
         guard status == noErr, let ref else {
-            registrationFailures.append(shortcut)
+            // The status is the only thing that distinguishes a Carbon quirk
+            // from a plain conflict, and `explanation` deliberately omits it,
+            // so log it here or it is unreachable outside a debugger.
+            NSLog("Sizeup2: RegisterEventHotKey failed for \(shortcut.displayString), OSStatus \(status)")
+            registrationFailures.append(
+                RegistrationFailure(shortcut: shortcut, reason: .rejectedBySystem(status)))
             return false
         }
 

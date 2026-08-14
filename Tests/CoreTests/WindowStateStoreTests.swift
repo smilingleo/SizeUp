@@ -118,3 +118,82 @@ private let leftHalf = CGRect(x: 0, y: 0, width: 1680, height: 1860)
     #expect(store.snapBackFrame(for: a) != nil)
     #expect(store.snapBackFrame(for: c) != nil)
 }
+
+@MainActor
+@Test func retainedPlacementReportsWhatTheWindowIsStillHolding() {
+    let store = WindowStateStore()
+    let key = WindowKey(pid: 501, elementHash: 1)
+    let applied = CGRect(x: 0, y: 0, width: 1680, height: 1860)
+
+    store.record(key: key, action: .half(.left), achievedFrame: applied,
+                 previousFrame: CGRect(x: 100, y: 100, width: 800, height: 600))
+
+    let placement = store.retainedPlacement(for: key, currentFrame: applied)
+    #expect(placement?.action == .half(.left))
+    #expect(placement?.step == 0)
+}
+
+@MainActor
+@Test func retainedPlacementIsNilOnceTheUserMovesTheWindow() {
+    let store = WindowStateStore()
+    let key = WindowKey(pid: 501, elementHash: 1)
+    let applied = CGRect(x: 0, y: 0, width: 1680, height: 1860)
+    store.record(key: key, action: .half(.left), achievedFrame: applied,
+                 previousFrame: CGRect(x: 100, y: 100, width: 800, height: 600))
+
+    let dragged = CGRect(x: 400, y: 400, width: 1680, height: 1860)
+    #expect(store.retainedPlacement(for: key, currentFrame: dragged) == nil)
+}
+
+@MainActor
+@Test func retainedPlacementCarriesTheCycleStep() {
+    let store = WindowStateStore()
+    let key = WindowKey(pid: 501, elementHash: 1)
+    let first = CGRect(x: 0, y: 0, width: 1680, height: 1860)
+    let second = CGRect(x: 0, y: 0, width: 2240, height: 1860)
+
+    store.record(key: key, action: .half(.left), achievedFrame: first,
+                 previousFrame: CGRect(x: 100, y: 100, width: 800, height: 600))
+    store.record(key: key, action: .half(.left), achievedFrame: second, previousFrame: first)
+
+    #expect(store.retainedPlacement(for: key, currentFrame: second)?.step == 1)
+}
+
+@MainActor
+@Test func recordingWithAnExplicitStepDoesNotAdvanceTheCycle() {
+    // A display move re-applies the same action on a new screen. That must
+    // preserve the window's size, not advance it to the next span.
+    let store = WindowStateStore()
+    let key = WindowKey(pid: 501, elementHash: 1)
+    let onBuiltIn = CGRect(x: 0, y: 0, width: 1680, height: 1860)
+    let onExternal = CGRect(x: 3360, y: -838, width: 1028, height: 1291)
+
+    store.record(key: key, action: .half(.left), achievedFrame: onBuiltIn,
+                 previousFrame: CGRect(x: 100, y: 100, width: 800, height: 600))
+    store.record(key: key, action: .half(.left), achievedFrame: onExternal,
+                 previousFrame: onBuiltIn, step: 0)
+
+    #expect(store.retainedPlacement(for: key, currentFrame: onExternal)?.step == 0)
+    // The other regression a display move can cause: the pre-tiling frame
+    // being clobbered by the intermediate frame the window held on display A.
+    #expect(store.snapBackFrame(for: key) == CGRect(x: 100, y: 100, width: 800, height: 600))
+}
+
+@MainActor
+@Test func retainedPlacementIsNilForAnUnknownWindow() {
+    let store = WindowStateStore()
+    let key = WindowKey(pid: 999, elementHash: 42)
+    #expect(store.retainedPlacement(for: key, currentFrame: .zero) == nil)
+}
+
+@MainActor
+@Test func recordClampsANegativeExplicitStep() {
+    // `step` is public and callers index `spans[step % count]`, where a
+    // negative value traps rather than misbehaving.
+    let store = WindowStateStore()
+    let key = WindowKey(pid: 502, elementHash: 2)
+    let applied = CGRect(x: 0, y: 0, width: 1680, height: 1860)
+    store.record(key: key, action: .half(.left), achievedFrame: applied,
+                 previousFrame: CGRect(x: 1, y: 1, width: 10, height: 10), step: -5)
+    #expect(store.retainedPlacement(for: key, currentFrame: applied)?.step == 0)
+}
