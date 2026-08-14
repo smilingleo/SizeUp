@@ -22,7 +22,7 @@ let package = Package(
         .testTarget(name: "GeometryTests", dependencies: ["Geometry", testing]),
         .testTarget(name: "WindowKitTests", dependencies: ["WindowKit", "Geometry", testing]),
         .testTarget(name: "HotkeysTests", dependencies: ["Hotkeys", testing]),
-        .testTarget(name: "CoreTests", dependencies: ["Core", "Geometry", "WindowKit", testing]),
+        .testTarget(name: "CoreTests", dependencies: ["Core", "Geometry", "WindowKit", "Hotkeys", testing]),
     ],
     swiftLanguageModes: [.v6]
 )
