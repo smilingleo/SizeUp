@@ -140,9 +140,13 @@ public final class HotkeyManager {
             eventClass: OSType(kEventClassKeyboard),
             eventKind: UInt32(kEventHotKeyPressed)
         )
-        // userData points at `handles`, not at `self`: its lifetime is tied
-        // to the Carbon registrations it owns, so the pointer stays valid
-        // for exactly as long as the installed handler could fire.
+        // userData points at `handles`, not at `self`. Its lifetime is not
+        // tied to the pointer alone any more: the callback below takes a
+        // strong retain on `handles` on this thread — where the object is
+        // provably alive because the handler is provably installed — and
+        // releases it after the main-actor hop, so a `HotkeyManager`
+        // deallocating between delivery and that hop cannot free `handles`
+        // out from under the dispatched block. See the callback's comment.
         let context = Unmanaged.passUnretained(handles).toOpaque()
         let status = InstallEventHandler(
             GetEventDispatcherTarget(),
@@ -160,27 +164,10 @@ public final class HotkeyManager {
     }
 }
 
-/// C callback for hotkey presses. Recovers the `CarbonHandles` from
-/// `userData`, then hops to the main actor before looking up the handler by
-/// hotkey id and invoking it.
-///
-/// The dictionary lookup happens *inside* the dispatched block, not out
-/// here: today registration happens once at launch, so reading it on
-/// whatever thread Carbon delivers this callback on is safe by luck, but a
-/// later feature that re-registers hotkeys while the app is running would
-/// turn a same-thread read here into a live race with a main-actor mutation
-/// of `registrations`. Deferring the read to the main actor removes the
-/// race entirely, rather than papering over it with a lock.
-///
-/// This does NOT use `MainActor.assumeIsolated`: `InstallEventHandler` on the
-/// application event target is documented as delivering on the run loop the
-/// handler was installed from, which today is the main run loop — but that
-/// is a long-standing convention, not a guarantee enforced by the API.
-/// `assumeIsolated` does not degrade gracefully if the assumption is ever
-/// wrong; it traps and crashes the app. `DispatchQueue.main.async` instead
-/// hops to the main actor unconditionally, correct regardless of which
-/// thread the callback actually arrives on, at the cost of one imperceptible
-/// run-loop turnaround before the window moves.
+/// C callback for hotkey presses. Retains `CarbonHandles` on this thread,
+/// hops to the main actor, then looks up the handler by hotkey id and
+/// invokes it. See the inline comments below for why the retain and the
+/// deferred dictionary lookup both matter.
 private let hotkeyEventCallback: EventHandlerUPP = { _, event, userData in
     guard let event, let userData else { return OSStatus(eventNotHandledErr) }
 
@@ -196,19 +183,43 @@ private let hotkeyEventCallback: EventHandlerUPP = { _, event, userData in
     )
     guard status == noErr else { return OSStatus(eventNotHandledErr) }
 
-    // Only the pointer is recovered on this thread; the dictionary itself
-    // is read on the main actor, inside the dispatched block below. The
-    // pointer crosses the closure boundary as a bit pattern, not as
-    // `UnsafeMutableRawPointer` or the `CarbonHandles` instance itself:
-    // Swift 6 strict concurrency treats both of those as still tied to this
-    // call's isolation domain, and correctly refuses to let them be
-    // captured by a closure that runs on another one.
+    // `userData` is `passUnretained`, so nothing keeps `CarbonHandles` alive
+    // on its own. On this thread the object is provably alive — Carbon does
+    // not invoke this callback after `RemoveEventHandler` returns, and
+    // `RemoveEventHandler` only runs from `CarbonHandles.deinit` — so a
+    // strong retain taken right here is guaranteed to succeed. A strong
+    // reference, not a bare pointer, is what crosses the dispatch boundary:
+    // an `Int` bit pattern carries no retain, so if the last reference to
+    // the owning `HotkeyManager` dropped between delivery and the main-actor
+    // hop, the bare-pointer version would resolve to already-freed memory.
+    // The dictionary lookup itself still happens *inside* the dispatched
+    // block, not out here: today registration happens once at launch, so
+    // reading it on whatever thread Carbon delivers this callback on would
+    // be safe by luck, but a later feature that re-registers hotkeys while
+    // the app is running would turn a same-thread read here into a live
+    // race with a main-actor mutation of `registrations`. Deferring the
+    // read to the main actor removes the race entirely, rather than
+    // papering over it with a lock.
+    let unmanaged = Unmanaged<HotkeyManager.CarbonHandles>.fromOpaque(userData)
+    _ = unmanaged.retain()  // +1 while provably alive; balanced below.
     let id = hotKeyID.id
     let rawPointerBits = Int(bitPattern: userData)
+
+    // This does NOT use `MainActor.assumeIsolated`: `InstallEventHandler` on
+    // the application event target is documented as delivering on the run
+    // loop the handler was installed from, which today is the main run loop
+    // — but that is a long-standing convention, not a guarantee enforced by
+    // the API. `assumeIsolated` does not degrade gracefully if the
+    // assumption is ever wrong; it traps and crashes the app.
+    // `DispatchQueue.main.async` instead hops to the main actor
+    // unconditionally, correct regardless of which thread the callback
+    // actually arrives on, at the cost of one imperceptible run-loop
+    // turnaround before the window moves.
     DispatchQueue.main.async {
         guard let pointer = UnsafeMutableRawPointer(bitPattern: rawPointerBits) else { return }
-        let handles = Unmanaged<HotkeyManager.CarbonHandles>.fromOpaque(pointer).takeUnretainedValue()
-        guard let handler = handles.handler(for: id) else { return }
+        let owned = Unmanaged<HotkeyManager.CarbonHandles>.fromOpaque(pointer)
+        defer { owned.release() }  // -1: balances the retain taken above.
+        guard let handler = owned.takeUnretainedValue().handler(for: id) else { return }
         handler()
     }
     return noErr
