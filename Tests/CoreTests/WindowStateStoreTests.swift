@@ -71,6 +71,19 @@ private let leftHalf = CGRect(x: 0, y: 0, width: 1680, height: 1860)
     #expect(store.snapBackFrame(for: key) == original)
 }
 
+/// An app that settles a fraction of a point off its applied frame on a
+/// later run-loop turn must still count as "our chain", so `originalFrame`
+/// survives and Snap Back returns the true original.
+@MainActor
+@Test func tinyDriftFromApplicationStillCountsAsOurChain() {
+    let store = WindowStateStore()
+    let original = CGRect(x: 300, y: 300, width: 900, height: 700)
+    store.record(key: key, action: .half(.left), achievedFrame: leftHalf, previousFrame: original)
+    let settled = leftHalf.offsetBy(dx: 0.6, dy: -0.6)
+    store.record(key: key, action: .half(.left), achievedFrame: leftHalf, previousFrame: settled)
+    #expect(store.snapBackFrame(for: key) == original)
+}
+
 /// But if the user moves the window themselves, that becomes the new origin.
 @MainActor
 @Test func manualMoveBecomesNewSnapBackOrigin() {

@@ -105,3 +105,14 @@ private func trailingExtent(_ total: CGFloat, _ span: Span, _ inner: CGFloat) ->
     guard let complement = span.complement else { return total }
     return max(0, total - inner - leadingExtent(total, complement, inner))
 }
+
+/// Frames are compared with a tolerance because an application may settle
+/// at a frame a fraction of a point away from what it was given, on a
+/// later run-loop turn than our read-back. Exact equality would then make
+/// us think the user had moved the window by hand.
+public func approximatelyEqual(_ a: CGRect, _ b: CGRect, tolerance: CGFloat = 2) -> Bool {
+    abs(a.minX - b.minX) <= tolerance
+        && abs(a.minY - b.minY) <= tolerance
+        && abs(a.maxX - b.maxX) <= tolerance
+        && abs(a.maxY - b.maxY) <= tolerance
+}

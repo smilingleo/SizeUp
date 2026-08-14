@@ -38,7 +38,7 @@ public final class WindowStateStore {
         guard action.cycles,
               let state = states[key],
               state.lastAction == action,
-              state.appliedFrame == currentFrame
+              approximatelyEqual(state.appliedFrame, currentFrame)
         else { return 0 }
 
         touch(key)
@@ -54,7 +54,7 @@ public final class WindowStateStore {
     ///     the Snap Back target only when the window was not already under our
     ///     control, so a chain of actions still undoes to the user's original.
     public func record(key: WindowKey, action: Action, achievedFrame: CGRect, previousFrame: CGRect) {
-        let wasOurs = states[key]?.appliedFrame == previousFrame
+        let wasOurs = states[key].map { approximatelyEqual($0.appliedFrame, previousFrame) } ?? false
         let original = wasOurs ? (states[key]?.originalFrame ?? previousFrame) : previousFrame
 
         var state = State(lastAction: action, appliedFrame: achievedFrame, originalFrame: original)
