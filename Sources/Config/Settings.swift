@@ -19,9 +19,13 @@ public struct GapSettings: Sendable, Equatable, Codable {
     ///
     /// `min`/`max` are not NaN-quieting — `min(max(.nan, 0), 100)` is still
     /// `.nan` — so `isFinite` must be checked explicitly before clamping.
-    /// The 100 cap exists because an uncapped inner gap can make
-    /// `targetFrame` return a zero-width rect, which `isSafeToApply`
-    /// permits (it only rejects negative sizes, not zero).
+    /// The 100 cap keeps gaps in a range that is useful rather than
+    /// pathological. It is **not** a safety mechanism: it was once argued to be
+    /// one, and that argument was wrong, because whether a gap degenerates a
+    /// window depends on the display and the column count, not on the gap alone
+    /// — `inner: 100` over 12 columns still yields a zero-height half on a 1080p
+    /// display. Degenerate placements are refused by `targetFrame` and
+    /// `isSafeToApply` instead. Do not restore a safety claim here.
     public var resolved: Gaps {
         Gaps(inner: Self.clamp(inner), outer: Self.clamp(outer))
     }

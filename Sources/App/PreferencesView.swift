@@ -111,7 +111,13 @@ final class PreferencesViewModel {
         skippedBundleIdentifiers = settings.skippedBundleIdentifiers.filter { seen.insert($0).inserted }
         // Entries that resolve to nothing are dropped rather than carried: they
         // are never applied, so keeping them would make the UI claim they were.
-        cycle = settings.cycle.filter { $0.resolved != nil }
+        // De-duplicated as well as filtered: a hand-edited `[1/2, 1/2]` would
+        // otherwise give two identical consecutive cycle steps, so a press would
+        // appear to do nothing.
+        var seenSpans = Set<String>()
+        cycle = settings.cycle.filter {
+            $0.resolved != nil && seenSpans.insert("\($0.occupied)/\($0.columns)").inserted
+        }
         droppedInvalidCycleEntries = settings.cycle.count - cycle.count
     }
 

@@ -89,8 +89,30 @@ If anything in this section fails, stop. Nothing else matters.
       never silently discard a hand-edit.
 - [ ] **Corrupt it deliberately**: `echo "{ nonsense" > …/settings.json`, relaunch. The app **starts
       normally on defaults**. It must not hang, crash, or refuse to launch.
-- [ ] Put a huge value in — `"inner": 5000` — and relaunch. It is clamped to 100, and no window ends up
-      zero-width or invisible.
+- [ ] Put a huge value in — `"inner": 5000` — and relaunch. It is clamped to 100, and the Settings
+      window shows 100 rather than 5000. (It must show what is *in effect*; showing 5000 would be a lie,
+      and the next unrelated edit would persist it.)
+- [ ] **The hostile file.** Quit, write exactly this, relaunch, and open Settings:
+
+      ```json
+      {
+        "cycle": [ { "columns": 3, "occupied": 2 }, { "columns": 2, "occupied": 1 },
+                   { "columns": 0, "occupied": 9 }, { "columns": 5, "occupied": 2 } ],
+        "gaps": { "inner": 1e19, "outer": 5000 },
+        "skippedBundleIdentifiers": [ "com.dup", "com.dup" ]
+      }
+      ```
+
+      Expect: the app **does not crash** (`1e19` used to kill it on open, via `Int(_:)`); both gaps read
+      100; an orange line says one entry is not a valid size; a grey line says `2/5` is kept and applied
+      in file order; `com.dup` appears **once**. Then tick ⅓ and confirm the file order is
+      `2/3, 1/2, 2/5, 1/3` — ⅔ must still be first, because hand-edited order is not ours to reshuffle.
+- [ ] Confirm a `settings.json.invalid` copy appears next to the file after a corrupt load. A missing
+      brace must not cost you every preference.
+- [ ] **A degenerate size is a no-op, not a misplacement.** Hand-edit `cycle` to include
+      `{ "columns": 12, "occupied": 1 }` and set `"inner": 100`. On a 1080p display the ⌃⌥⌘↓ step for
+      that size does nothing at all. That is deliberate — refusing beats writing a zero-height window —
+      but nothing in the UI tells you why.
 
 ## 7. Not expected to work
 
