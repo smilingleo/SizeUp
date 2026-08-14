@@ -3,9 +3,15 @@ import ServiceManagement
 /// Registers the app itself as a login item.
 ///
 /// `SMAppService.mainApp` needs no helper bundle and no `LaunchAgents` plist —
-/// the app registers itself. It does require the app to live somewhere the
-/// system is willing to launch from, `/Applications` in practice, so
-/// registration can legitimately fail while running from a build directory.
+/// the app registers itself.
+///
+/// **This does not work with the project's current ad-hoc signing.** Measured on
+/// macOS 26: `SMAppService.mainApp.status` is `.notFound` (raw value 3) both from
+/// `/Applications` and from a build directory, because the bundle carries
+/// `flags=0x2(adhoc)`. macOS will not register an ad-hoc-signed app as a login
+/// item regardless of where it lives. The code below is correct and degrades
+/// visibly rather than silently, but the feature stays unavailable until the app
+/// is signed with a real identity. Do not "fix" this by moving the app.
 @MainActor
 enum LaunchAtLogin {
     /// The states worth distinguishing in the UI.
@@ -19,7 +25,7 @@ enum LaunchAtLogin {
         case enabled
         case disabled
         case requiresApproval
-        /// The system will not launch this bundle from where it currently is.
+        /// The system will not register this bundle at all.
         case unsupported
     }
 
@@ -50,7 +56,11 @@ enum LaunchAtLogin {
         case .requiresApproval:
             return "Approve Sizeup2 in System Settings → General → Login Items."
         case .unsupported:
-            return "Move Sizeup2 to /Applications to enable this."
+            // Deliberately does NOT say "move it to /Applications": that was
+            // measured to be the wrong advice, since the real cause is the
+            // ad-hoc signature and the status is .notFound from there too.
+            return "Unavailable: macOS will not register an ad-hoc-signed app "
+                + "as a login item. Needs a real code-signing identity."
         }
     }
 

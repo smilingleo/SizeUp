@@ -42,10 +42,8 @@ Cross-display window placement cannot be verified automatically. It needs Access
 
 - [ ] The menu lists **Next Display** and **Previous Display**, with ⌃⌥→ / ⌃⌥← shown as their tooltips.
 - [ ] **With SizeUp still running**, quit and relaunch Sizeup2. Those two menu entries should read **"(claimed by another app)"** — not "(duplicate shortcut)", which would mean a bug in our own keymap instead. Quit SizeUp, relaunch Sizeup2, and confirm the suffix disappears.
-- [ ] **Open at Login** is ticked/unticked correctly and is **clickable only when the app is in `/Applications`** — running from `build/` it must appear greyed out with a tooltip. (Verified automatically during development, but worth one look.)
-- [ ] If macOS shows the item as **"Open at Login  (needs approval)"** with a dash rather than a tick, that is the `requiresApproval` state: registration worked but you must approve Sizeup2 under **System Settings → General → Login Items**. Do that and confirm the item becomes a normal tick.
-- [ ] Tick **Open at Login**, reboot, and confirm Sizeup2 starts with working shortcuts.
-- [ ] Untick it, reboot, and confirm it does not start. Then decide which you want.
+- [ ] **Open at Login is expected to be GREYED OUT.** This was measured during development, not assumed: macOS reports `.notFound` for an ad-hoc-signed app whether it sits in `/Applications` or in a build directory, so the feature cannot work until the app is signed with a real identity. Hover it and confirm the tooltip names the *signature* as the reason, not the location. **Do not try to fix this by moving the app** — that was the original (wrong) guess and it does not help.
+- [ ] To actually start Sizeup2 at login today, add it under **System Settings → General → Login Items**, which does not require a Developer ID. Confirm it comes back with working shortcuts after a reboot.
 
 ## If something is wrong
 

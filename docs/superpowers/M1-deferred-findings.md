@@ -25,8 +25,13 @@ here. What follows is only what was consciously left.
   are now spelled out, so a future `Direction` case fails to compile rather than acquiring a wrong
   label.
 - **Launch at login is not implemented.** Now an "Open at Login" menu item over
-  `SMAppService.mainApp`, disabled with a tooltip when the bundle is somewhere macOS will not launch
-  from. Fixing this exposed a second bug of M1's own kind: `NSMenu.autoenablesItems` defaults to
+  `SMAppService.mainApp`, disabled with a tooltip when the system will not register the bundle.
+  **Measured caveat:** it does not currently work at all, because macOS refuses to register an
+  ad-hoc-signed app as a login item — `status` is `.notFound` (raw 3) from `/Applications` as well as
+  from a build directory. The implementation is correct and fails visibly instead of silently, but
+  the feature is unreachable until the app has a real signing identity. This is a direct consequence
+  of the project's ad-hoc-signing decision, so it belongs with the open-sourcing work, not with a
+  bug fix. Fixing this exposed a second bug of M1's own kind: `NSMenu.autoenablesItems` defaults to
   true, so the manual `isEnabled = false` was silently discarded and the item stayed clickable.
   Verified through accessibility scripting rather than by reading the code.
 

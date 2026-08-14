@@ -45,10 +45,17 @@ memory.
 > the normal split-rectangle icon) means one or more shortcuts could not be
 > claimed — open the menu to see which.
 >
-> **To start Sizeup2 automatically,** open the menu-bar menu and tick
-> **Open at Login**. This requires the app to live in `/Applications` — macOS
-> will not launch a login item from a build directory, and the menu item is
-> disabled with an explanatory tooltip when that is the case.
+> **Launch at login is implemented but not currently usable.** The menu has an
+> **Open at Login** item backed by `SMAppService`, but macOS will not register
+> an *ad-hoc-signed* app as a login item, and this app is ad-hoc signed by
+> design (see Distribution below). Measured on macOS 26, the service status is
+> `.notFound` from `/Applications` as well as from a build directory — moving
+> the app does not help. The menu item is therefore greyed out with a tooltip
+> naming the real reason, rather than silently doing nothing.
+>
+> Until the app is signed with a real identity, start Sizeup2 by hand after a
+> reboot, or add it under **System Settings → General → Login Items**, which
+> does not require a Developer ID.
 
 ```
 make dev
