@@ -53,13 +53,24 @@ public final class WindowStateStore {
     ///   - previousFrame: Where the window was immediately before. It becomes
     ///     the Snap Back target only when the window was not already under our
     ///     control, so a chain of actions still undoes to the user's original.
-    public func record(key: WindowKey, action: Action, achievedFrame: CGRect, previousFrame: CGRect) {
+    ///   - step: Overrides the automatic cycle advance. A display move
+    ///     re-applies the same action on a new screen and must preserve the
+    ///     window's size rather than advancing to the next span.
+    public func record(
+        key: WindowKey,
+        action: Action,
+        achievedFrame: CGRect,
+        previousFrame: CGRect,
+        step: Int? = nil
+    ) {
         let existing = states[key]
         let wasOurs = isOurs(existing, comparedTo: previousFrame)
         let original = wasOurs ? (existing?.originalFrame ?? previousFrame) : previousFrame
 
         var state = State(lastAction: action, appliedFrame: achievedFrame, originalFrame: original)
-        if let existing, existing.lastAction == action, wasOurs {
+        if let step {
+            state.step = step
+        } else if let existing, existing.lastAction == action, wasOurs {
             state.step = existing.cycleStepAdvanced
         }
         states[key] = state
@@ -71,6 +82,17 @@ public final class WindowStateStore {
         guard let state = states[key] else { return nil }
         touch(key)
         return state.originalFrame
+    }
+
+    /// The action and cycle step this window is still holding, or `nil` if the
+    /// user has moved or resized it since — in which case we know nothing
+    /// about its current layout and must not pretend otherwise.
+    ///
+    /// Read-only with respect to the cycle: unlike `cycleStep`, this never
+    /// advances anything.
+    public func retainedPlacement(for key: WindowKey, currentFrame: CGRect) -> (action: Action, step: Int)? {
+        guard let state = states[key], isOurs(state, comparedTo: currentFrame) else { return nil }
+        return (state.lastAction, state.step)
     }
 
     /// Whether `frame` still matches where we last left this window, i.e.
