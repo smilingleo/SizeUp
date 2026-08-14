@@ -139,6 +139,25 @@ private func makeRouter(
     #expect(w.applied.isEmpty)
 }
 
+/// A stored frame lands on a display that has since disconnected: Snap Back
+/// must not send the window somewhere unreachable.
+@MainActor
+@Test func snapBackClampsToCurrentScreenWhenStoredDisplayIsGone() {
+    let disconnectedDisplayFrame = CGRect(x: 3360, y: -838, width: 900, height: 700)
+    let w = TestWindow(frame: disconnectedDisplayFrame)
+    let store = WindowStateStore()
+    // Pretend the window was tiled while the external display existed, then
+    // it got unplugged: only `builtIn` remains among current screens.
+    store.record(key: w.key, action: .half(.left),
+                 achievedFrame: CGRect(x: 0, y: 0, width: 400, height: 400),
+                 previousFrame: disconnectedDisplayFrame)
+    w.stored = CGRect(x: 0, y: 0, width: 400, height: 400)
+    let router = makeRouter(window: w, screens: [builtIn], store: store)
+    router.perform(.snapBack)
+    #expect(builtIn.visibleFrame.intersects(w.stored))
+    #expect(w.stored != disconnectedDisplayFrame)
+}
+
 /// With a single span, repeated presses are idempotent — M1 behavior.
 @MainActor
 @Test func repeatedPressIsIdempotentWithOneSpan() {

@@ -36,7 +36,8 @@ public struct ActionRouter {
         switch action {
         case .snapBack:
             guard let restore = store.snapBackFrame(for: window.key) else { return }
-            guard let achieved = window.setFrame(restore) else { return }
+            let target = clampToVisibleScreen(restore, current: current)
+            guard let achieved = window.setFrame(target) else { return }
             store.record(key: window.key, action: .snapBack,
                          achievedFrame: achieved, previousFrame: current)
 
@@ -55,6 +56,25 @@ public struct ActionRouter {
             store.record(key: window.key, action: action,
                          achievedFrame: achieved, previousFrame: current)
         }
+    }
+
+    /// If `frame` has no positive overlap with any current screen's
+    /// `visibleFrame` — the display it was stored against has since been
+    /// disconnected, or its resolution changed — center it into the
+    /// `visibleFrame` of the screen the window is currently on, so Snap Back
+    /// never strands the window somewhere unreachable.
+    private func clampToVisibleScreen(_ frame: CGRect, current: CGRect) -> CGRect {
+        let all = screens.screens
+        let onAnyScreen = all.contains { overlap(frame, $0.visibleFrame) > 0 }
+        guard !onAnyScreen, let screen = screen(containing: current) else { return frame }
+        let visible = screen.visibleFrame
+        let size = CGSize(width: min(frame.width, visible.width), height: min(frame.height, visible.height))
+        return CGRect(
+            x: (visible.midX - size.width / 2).rounded(.down),
+            y: (visible.midY - size.height / 2).rounded(.down),
+            width: size.width,
+            height: size.height
+        )
     }
 
     /// The display holding the largest part of `frame`, falling back to the
