@@ -11,6 +11,7 @@ import Hotkeys
 public enum DefaultKeymap {
     private static let ctrlOptCmd: UInt = 1_835_008
     private static let ctrlOptShift: UInt = 917_504
+    private static let ctrlOpt: UInt = 786_432
 
     public static let bindings: [(Shortcut, Action)] = [
         (Shortcut(keyCode: KeyCode.leftArrow, modifierFlags: ctrlOptCmd), .half(.left)),
@@ -25,9 +26,19 @@ public enum DefaultKeymap {
         (Shortcut(keyCode: KeyCode.upArrow, modifierFlags: ctrlOptShift), .quarter(.upperRight)),
         (Shortcut(keyCode: KeyCode.downArrow, modifierFlags: ctrlOptShift), .quarter(.lowerLeft)),
         (Shortcut(keyCode: KeyCode.rightArrow, modifierFlags: ctrlOptShift), .quarter(.lowerRight)),
+        // Next/Previous Display. NOTE these are the same arrows as the halves
+        // bindings above, distinguished only by the command modifier — so a
+        // dropped command bit here would silently steal the halves shortcuts.
+        (Shortcut(keyCode: KeyCode.rightArrow, modifierFlags: ctrlOpt), .display(.next)),
+        (Shortcut(keyCode: KeyCode.leftArrow, modifierFlags: ctrlOpt), .display(.previous)),
     ]
 
     /// Menu label for an action.
+    ///
+    /// Every direction is spelled out rather than caught by a `case .display:`
+    /// fallthrough. The catch-all version labelled `.display(.above)` as
+    /// "Previous Display", and an exhaustive switch means a future `Direction`
+    /// case fails to compile instead of acquiring a silently wrong label.
     public static func title(for action: Action) -> String {
         switch action {
         case .half(.left): return "Left Half"
@@ -42,9 +53,13 @@ public enum DefaultKeymap {
         case .fullScreen: return "Full Screen"
         case .snapBack: return "Snap Back"
         case .display(.next): return "Next Display"
-        case .display: return "Previous Display"
+        case .display(.previous): return "Previous Display"
+        case .display(.above): return "Display Above"
+        case .display(.below): return "Display Below"
         case .space(.next): return "Next Space"
-        case .space: return "Other Space"
+        case .space(.previous): return "Previous Space"
+        case .space(.above): return "Space Above"
+        case .space(.below): return "Space Below"
         }
     }
 }
