@@ -86,11 +86,32 @@ private let builtIn = ScreenInfo(
     #expect(right.minX - left.maxX == 10)
 }
 
-/// A two-thirds and a one-third window must tile the screen exactly.
-/// Fractions are M3 behavior, but the arithmetic ships now.
+/// A two-thirds and a one-third window must tile the screen exactly,
+/// with and without an inner gap. Spans are M3 behavior, but the
+/// arithmetic ships now.
 @Test func twoThirdsAndOneThirdTileExactly() {
-    let big = targetFrame(for: .half(.left), on: builtIn, fraction: 2.0 / 3.0)!
-    let small = targetFrame(for: .half(.right), on: builtIn, fraction: 1.0 / 3.0)!
+    let big = targetFrame(for: .half(.left), on: builtIn, span: Span(occupied: 2, of: 3))!
+    let small = targetFrame(for: .half(.right), on: builtIn, span: Span(occupied: 1, of: 3))!
     #expect(big.maxX == small.minX)
     #expect(big.width + small.width == 3360)
+}
+
+/// The case a bare-fraction implementation gets wrong: with a nonzero inner
+/// gap, an asymmetric split must still tile the axis exactly. Both sides have
+/// to agree that a 3-column layout has 2 inner gaps.
+@Test func asymmetricSplitWithInnerGapTilesExactly() {
+    let g = Gaps(inner: 10)
+    let big = targetFrame(for: .half(.left), on: builtIn, gaps: g, span: Span(occupied: 2, of: 3))!
+    let small = targetFrame(for: .half(.right), on: builtIn, gaps: g, span: Span(occupied: 1, of: 3))!
+    #expect(big.width == 2236)
+    #expect(small.width == 1114)
+    #expect(small.minX - big.maxX == 10)
+    #expect(big.width + small.width + 10 == 3360)
+
+    // And with the spans swapped.
+    let small2 = targetFrame(for: .half(.left), on: builtIn, gaps: g, span: Span(occupied: 1, of: 3))!
+    let big2 = targetFrame(for: .half(.right), on: builtIn, gaps: g, span: Span(occupied: 2, of: 3))!
+    #expect(small2.width == 1113)
+    #expect(big2.width == 2237)
+    #expect(big2.minX - small2.maxX == 10)
 }
