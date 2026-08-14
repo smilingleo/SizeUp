@@ -41,8 +41,21 @@ public struct ActionRouter {
             store.record(key: window.key, action: .snapBack,
                          achievedFrame: achieved, previousFrame: current)
 
-        case .display, .space:
-            // M2 and M4.
+        case .display(let direction):
+            guard let source = screen(containing: current),
+                  let destination = neighbouringScreen(
+                      from: source, in: screens.screens, direction: direction
+                  )
+            else { return }
+
+            let placement = retiled(current, from: source, to: destination, key: window.key)
+            guard let achieved = window.setFrame(placement.frame) else { return }
+            store.record(key: window.key, action: placement.action,
+                         achievedFrame: achieved, previousFrame: current,
+                         step: placement.step)
+
+        case .space:
+            // M4.
             return
 
         default:
@@ -101,5 +114,32 @@ public struct ActionRouter {
     private func overlap(_ a: CGRect, _ b: CGRect) -> CGFloat {
         let i = a.intersection(b)
         return i.isNull ? 0 : i.width * i.height
+    }
+
+    /// Where a window should land on `destination`, and what to record for it.
+    ///
+    /// A window still sitting exactly where we tiled it has its action
+    /// recomputed on the destination display, which tiles exactly. Anything
+    /// else — never tiled by us, or moved by the user since — is mapped
+    /// proportionally, which is approximate but never wrong about intent.
+    ///
+    /// The recorded step is preserved rather than advanced: moving a window to
+    /// another display is not a repeat press, and must not resize it.
+    private func retiled(
+        _ current: CGRect,
+        from source: ScreenInfo,
+        to destination: ScreenInfo,
+        key: WindowKey
+    ) -> (frame: CGRect, action: Action, step: Int) {
+        if let held = store.retainedPlacement(for: key, currentFrame: current),
+           held.action.isPlacement,
+           let exact = targetFrame(
+               for: held.action, on: destination, gaps: gaps,
+               current: current, span: spans[held.step % spans.count]
+           ) {
+            return (exact, held.action, held.step)
+        }
+        let mapped = proportionalFrame(current, from: source, to: destination)
+        return (mapped, .display(.next), 0)
     }
 }
