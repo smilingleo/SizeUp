@@ -232,6 +232,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshLaunchAtLoginItem()
     }
 
+    func menuDidClose(_ menu: NSMenu) {
+        // The error describes the click that just happened. Clearing it when the
+        // menu closes stops "(failed)" outliving its cause for the rest of the
+        // session, e.g. after the user fixes the cause in System Settings.
+        lastLaunchAtLoginError = nil
+    }
+
     @objc private func toggleLaunchAtLogin() {
         do {
             try LaunchAtLogin.setEnabled(!LaunchAtLogin.isEnabled)
