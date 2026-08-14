@@ -1,0 +1,114 @@
+# Deferred Findings — carried out of M1
+
+Every item below was found by review during M1 and deliberately **not** fixed then. The M1 execution
+ledger lives in `.superpowers/`, which is gitignored, so this file is the durable record. Each item
+has a triage decision from the broad final review.
+
+Items judged "fix now" during M1 were fixed in the two post-review fix waves and are **not** listed
+here. What follows is only what was consciously left.
+
+## For M2 (multi-display moves)
+
+**`ScreenInfo.id` is an array index, not a stable display identity.**
+`Sources/WindowKit/AXWindowProvider.swift` — `id` is the `NSScreen.screens` index. Indices are not
+stable across sleep/wake, resolution changes, or replug, and index order is not spatial order. M2's
+next/previous-display actions need `deviceDescription[.init("NSScreenNumber")]` → `CGDirectDisplayID`
+for identity, and a sort by `frame.minX` for ordering. Worth doing early — there is exactly one
+producer of `ScreenInfo` today, so the churn is small now and grows later.
+
+**Display-overlap tie-breaking is undocumented.**
+`Sources/Core/ActionRouter.swift` — `max(by:)` keeps the *first* maximum, so a window split exactly
+evenly across two displays lands on the earlier screen. Deterministic and defensible, but M2's
+display switching depends on it. Add a comment and a test when it matters.
+
+**`registrationFailures` does not say *why* a shortcut failed.**
+`Sources/Hotkeys/HotkeyManager.swift` — a shortcut rejected because our own keymap already claimed
+it is reported identically to one another app owns. Today a duplicate keymap entry is misreported as
+"another app owns it". A preferences UI needs the real reason to write a useful error.
+
+**`keyName`'s `"?"` fallback is untested and silently meaningless.**
+`Sources/Hotkeys/Shortcut.swift` — fine while `KeyCode` is a closed internal set. The moment
+preferences allow arbitrary keys, use `TISCopyCurrentKeyboardLayoutInputSource` / `UCKeyTranslate`
+rather than growing the switch.
+
+**`DefaultKeymap.title(for:)` has catch-all `.display` / `.space` arms.**
+`Sources/Core/DefaultKeymap.swift` — `Direction` has four cases, so a future `.display(.above)`
+binding would silently be labelled "Previous Display" with no compiler warning. Make the arms
+explicit when those actions ship.
+
+**Launch at login is not implemented.**
+The spec lists `SMAppService`. Until then the app must be started by hand after every reboot, which
+the README now states plainly.
+
+## For M3 (preferences: gaps, cycle sizes, skip list)
+
+**`Span.init` uses `precondition`, so bad user config would crash.**
+`Sources/Geometry/Span.swift` — only reachable from user configuration, which does not exist yet.
+When M3 parses spans, add a failable initializer at the config boundary rather than trapping.
+
+**`ActionRouter` coerces an empty `spans` array to `[.half]`.**
+`Sources/Core/ActionRouter.swift` — a correct defensive default now, but it would mask a real wiring
+bug once M3 supplies span lists from config. Reject empty lists at config load instead.
+
+**`WindowStateStore` capacity may be too small.**
+`Sources/Core/WindowStateStore.swift` — LRU capacity is 50 and `touch()` is O(n). The cost is
+irrelevant at n=50, but evicting a Snap Back origin the user still remembers is more annoying than
+the memory. Consider raising to ~200 in M3.
+
+## For M4 (Spaces)
+
+**`SpaceMover` has a viable seam but needs a wider `WindowHandle`.**
+`.space` is a first-class `Action` case and `ActionRouter` already short-circuits it, so the
+injection point is obvious. But drag simulation needs *screen* coordinates and a title-bar point —
+capability `WindowHandle` does not expose (no `titleBarPoint`, no raw element access). M4 will have
+to widen `WindowHandle` or hand `SpaceMover` the `AXUIElement` directly. Plan for it rather than
+discovering it.
+
+## Before open-sourcing
+
+**The `swift-testing` package dependency will break CI on runners that have Xcode.**
+`Package.swift` — this machine has Command Line Tools only, so neither the bundled `Testing` module
+nor `XCTest` is importable, and the SPM package is the only way to run tests. On a runner *with*
+Xcode the toolchain also provides `Testing`, which will conflict. Gate the dependency or document a
+flag before publishing.
+
+## Accepted as-is (rationale recorded so it is not re-litigated)
+
+- **`CFGetTypeID` + `unsafeDowncast` appears twice** (`AXWindow.swift`, `AXWindowProvider.swift`) for
+  two different CF types. Both correct. Extract a shared generic helper only if a third appears.
+- **`Tests/WindowKitTests` and `Tests/CoreTests` each define their own window fake.** Swift test
+  targets cannot share helpers without a separate support target, which is not worth it for two
+  small fakes. **Do not extract these** — the duplication is deliberate.
+- **Raw modifier integers (`1835008`, `917504`) appear in both `DefaultKeymap` and its test.** The
+  restatement is deliberate: the test independently pins the value rather than importing the
+  constant it is meant to verify.
+- **No `isTerminated` check on the tracked application.** Safe, but by Foundation's behavior rather
+  than by this code: `NSRunningApplication.processIdentifier` returns `-1` after termination, so
+  `AXUIElementCreateApplication(-1)` fails rather than hitting a recycled pid. Documented at the
+  point of use. **A future maintainer who caches a bare `pid_t` instead of the live object loses
+  this guarantee.**
+- **The Carbon callback firing path has no automated test.** Synthetic key events are not worth the
+  harness; covered by the manual verification matrix instead.
+- **`trailingExtent`'s full-axis fallback is untested**, and the quarters test proves exact tiling
+  without separately asserting containment in `visibleFrame`. Both are implied by existing
+  assertions.
+
+## The untested surface, stated honestly
+
+M1 ships 79 passing tests, weighted toward the pure logic most likely to be subtly wrong (exact
+tiling, odd pixel counts, negative-origin displays, cycle-reset semantics, LRU eviction). But the
+untested surface is also the surface most likely to break:
+
+- `AXWindow`'s position/size/position write sequence and read-back has **no automated coverage**.
+  The test fakes model a *cooperative* window — one that clamps size, honors position exactly, and
+  responds synchronously. Real failure modes are windows that do not behave like the fake, so the
+  tests are structurally incapable of finding them.
+- `AXWindowProvider.focusedWindow()` is untested. That is how the frontmost-app/menu bug survived
+  nine per-task reviews.
+- `AppDelegate` has no tests, and it holds the permission state machine, the menu, and the second
+  entry point into the router.
+
+The manual matrix in `M1-manual-verification.md` is the substitute for all of this, and it has been
+run and passed. Cheap additions worth making if this layer ever misbehaves: a fake window that
+returns a frame a fraction of a point off the request (proving the tolerance comparison), and a
+store test that a false-negative chain check does not clobber `originalFrame`.
