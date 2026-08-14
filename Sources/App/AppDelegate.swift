@@ -190,7 +190,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         )
         settingsItem.keyEquivalentModifierMask = .command
         settingsItem.target = self
-        // `autoenablesItems` is off (see below), so every new item needs
+        // `autoenablesItems` is off (set where the menu is created), so every new item needs
         // this set explicitly or it renders greyed out and unclickable.
         // This exact bug has shipped twice already in this project (the
         // shortcut menu, then the login item) — see the M3 plan.

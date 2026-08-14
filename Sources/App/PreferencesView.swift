@@ -44,16 +44,19 @@ final class PreferencesViewModel {
 
     var innerGap: Double
     var outerGap: Double
-    var checkedSpanIDs: Set<CatalogueSpan.ID>
-    /// Cycle steps that exist on disk but are not in the catalogue, e.g. a
-    /// hand-edited 2/5. Held so `save()` can write them back.
+    /// The cycle exactly as it will be written, in order.
     ///
-    /// Without this, checking any box would silently delete them — and the plan
-    /// promises hand-editing the JSON as the escape hatch for spans the
-    /// catalogue cannot express, so destroying those edits would break the
-    /// feature's only stated workaround. Same lost-update hazard the single
-    /// window guards against, arriving through the file instead.
-    private(set) var customSpans: [SpanSetting] = []
+    /// One ordered list rather than "a set of checked catalogue boxes, plus
+    /// custom spans appended". The split version preserved spans the catalogue
+    /// could not express while silently rewriting the ORDER of the ones it could
+    /// — so a user who hand-edited the cycle to put two-thirds first lost that on
+    /// the next click. Order is load-bearing: the router indexes this array by
+    /// cycle step. Keeping one list makes the catalogue and hand-edited entries
+    /// obey the same rule, which is also less code.
+    private(set) var cycle: [SpanSetting] = []
+    /// How many entries were discarded as invalid, so the UI can admit it
+    /// rather than quietly dropping them.
+    private(set) var droppedInvalidCycleEntries = 0
     var skippedBundleIdentifiers: [String]
     /// Shown inline rather than dropped, per the plan: a settings screen
     /// that fails to persist without saying so is worse than one that
@@ -66,7 +69,6 @@ final class PreferencesViewModel {
         innerGap = 0
         outerGap = 0
         skippedBundleIdentifiers = []
-        checkedSpanIDs = []
         adopt(store.settings)
     }
 
@@ -79,26 +81,57 @@ final class PreferencesViewModel {
     func reload() {
         store.load()
         adopt(store.settings)
+        // Publish, so the running router matches what this window now displays.
+        // Without this, a hand-edit made while the app was running would be shown
+        // here but not applied until the user happened to touch a control.
+        onChange()
     }
 
     private func adopt(_ settings: Config.Settings) {
-        innerGap = settings.gaps.inner
-        outerGap = settings.gaps.outer
-        skippedBundleIdentifiers = settings.skippedBundleIdentifiers
-        checkedSpanIDs = Set(
-            settings.cycle.compactMap { Self.catalogue.first(matching: $0)?.id }
-        )
-        customSpans = settings.cycle.filter { Self.catalogue.first(matching: $0) == nil }
+        // `resolved`, never the raw file values. Two reasons, both load-bearing:
+        //
+        // `Int(_: Double)` traps for anything beyond Int.max, and the gap labels
+        // interpolate `Int(innerGap)`. A hand-edited `"inner": 1e19` decodes
+        // fine — JSONDecoder only balks around 1e400 — and would then kill the
+        // app every single time the Settings window was opened, leaving no way
+        // out but to edit the file. The DTO was built to keep configuration away
+        // from trapping code, and reading it raw here walked straight back into
+        // it.
+        //
+        // And displaying an unclamped value would be a lie: windows are tiled
+        // with the clamped gap, so a stepper reading 5000 would describe
+        // something that is not happening, and the next unrelated edit would
+        // persist 5000 again.
+        let usable = settings.gaps.resolved
+        innerGap = usable.inner
+        outerGap = usable.outer
+        // De-duplicated because `ForEach(id: \.self)` needs unique ids, and a
+        // hand-edited file can repeat an entry.
+        var seen = Set<String>()
+        skippedBundleIdentifiers = settings.skippedBundleIdentifiers.filter { seen.insert($0).inserted }
+        // Entries that resolve to nothing are dropped rather than carried: they
+        // are never applied, so keeping them would make the UI claim they were.
+        cycle = settings.cycle.filter { $0.resolved != nil }
+        droppedInvalidCycleEntries = settings.cycle.count - cycle.count
     }
 
     /// True when the resolved cycle will not actually cycle — either
     /// nothing is checked (falls back to `[.half]`) or only ½ is checked.
     /// Surfaced so the UI can say plainly that the shortcut will not resize
     /// on a repeat press, rather than let the default look broken.
+    /// Whether a repeated press will actually resize anything.
+    ///
+    /// Derived from the resolved cycle, not from which boxes are ticked: an
+    /// invalid entry is never applied, so counting it here would hide the note
+    /// exactly when the user most needs it.
     var cycleIsEffectivelyHalfOnly: Bool {
-        guard customSpans.isEmpty else { return false }
-        return checkedSpanIDs.isEmpty
-            || (checkedSpanIDs.count == 1 && checkedSpanIDs.contains(Self.catalogue[0].id))
+        let resolved = Config.Settings(cycle: cycle).resolvedCycle
+        return resolved.count <= 1
+    }
+
+    /// Cycle steps the catalogue cannot show, e.g. a hand-edited 2/5.
+    var customSpans: [SpanSetting] {
+        cycle.filter { Self.catalogue.first(matching: $0) == nil }
     }
 
     /// Built here rather than in the view: string interpolation over an array
@@ -106,18 +139,29 @@ final class PreferencesViewModel {
     var customSpansExplanation: String {
         let list = customSpans.map { "\($0.occupied)/\($0.columns)" }.joined(separator: ", ")
         return "Your settings file also contains \(list), which this list cannot show. "
-            + "They are kept, and applied after the sizes above."
+            + "Those are kept and applied in file order."
+    }
+
+    var droppedEntriesExplanation: String {
+        droppedInvalidCycleEntries == 1
+            ? "One entry in your settings file is not a valid size and is ignored."
+            : "\(droppedInvalidCycleEntries) entries in your settings file are not valid sizes "
+                + "and are ignored."
     }
 
     func isChecked(_ span: CatalogueSpan) -> Bool {
-        checkedSpanIDs.contains(span.id)
+        cycle.contains { $0.occupied == span.occupied && $0.columns == span.columns }
     }
 
+    /// Appends at the end rather than at the catalogue position, so the cycle
+    /// runs in the order the user built it and an existing order is never
+    /// reshuffled by an unrelated edit.
     func setChecked(_ span: CatalogueSpan, to checked: Bool) {
         if checked {
-            checkedSpanIDs.insert(span.id)
+            guard !isChecked(span) else { return }
+            cycle.append(SpanSetting(occupied: span.occupied, columns: span.columns))
         } else {
-            checkedSpanIDs.remove(span.id)
+            cycle.removeAll { $0.occupied == span.occupied && $0.columns == span.columns }
         }
         save()
     }
@@ -141,14 +185,6 @@ final class PreferencesViewModel {
     }
 
     private func save() {
-        // Catalogue order first, then anything hand-edited that the catalogue
-        // cannot show. Appending rather than interleaving because the router
-        // applies the cycle in array order, and there is no way to know where in
-        // that order a custom step was meant to sit.
-        let cycle = Self.catalogue
-            .filter { checkedSpanIDs.contains($0.id) }
-            .map { SpanSetting(occupied: $0.occupied, columns: $0.columns) }
-            + customSpans
         let newSettings = Config.Settings(
             gaps: GapSettings(inner: innerGap, outer: outerGap),
             cycle: cycle,
@@ -259,6 +295,11 @@ struct PreferencesView: View {
                         set: { viewModel.setChecked(span, to: $0) }
                     )
                 )
+            }
+            if viewModel.droppedInvalidCycleEntries > 0 {
+                Text(viewModel.droppedEntriesExplanation)
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
             }
             if !viewModel.customSpans.isEmpty {
                 Text(viewModel.customSpansExplanation)

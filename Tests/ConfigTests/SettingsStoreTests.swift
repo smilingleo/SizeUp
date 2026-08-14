@@ -10,12 +10,53 @@ private func makeTempDirectory() -> URL {
     return dir
 }
 
-@Test @MainActor func loadingAMissingFileYieldsDefaults() {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+// The three tests below deliberately establish non-default settings FIRST.
+//
+// `init` already assigns `Settings()`, so asserting "load yields defaults" on a
+// fresh store passes even if `load()` does nothing at all — verified by mutation:
+// replacing the whole body of `load()` with a comment left all three green. They
+// only constrain anything if there is non-default state for a failed load to have
+// to discard, which is a real path, because the Preferences window reloads over
+// live state every time it is shown.
+
+@Test @MainActor func loadingAMissingFileYieldsDefaults() throws {
+    let dir = makeTempDirectory()
     defer { try? FileManager.default.removeItem(at: dir) }
     let url = dir.appendingPathComponent("settings.json")
 
     let store = SettingsStore(url: url)
+    try store.save(Settings(gaps: GapSettings(inner: 12, outer: 6)))
+    #expect(store.settings != Settings())
+    try FileManager.default.removeItem(at: url)
+
+    store.load()
+
+    #expect(store.settings == Settings())
+}
+
+@Test @MainActor func loadingCorruptJSONYieldsDefaultsWithoutThrowing() throws {
+    let dir = makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let url = dir.appendingPathComponent("settings.json")
+
+    let store = SettingsStore(url: url)
+    try store.save(Settings(skippedBundleIdentifiers: ["com.example.one"]))
+    try "{ not json".write(to: url, atomically: true, encoding: .utf8)
+
+    store.load()
+
+    #expect(store.settings == Settings())
+}
+
+@Test @MainActor func loadingJSONOfTheWrongShapeYieldsDefaults() throws {
+    let dir = makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let url = dir.appendingPathComponent("settings.json")
+
+    let store = SettingsStore(url: url)
+    try store.save(Settings(gaps: GapSettings(inner: 12, outer: 6)))
+    try #"{"gaps": "huge"}"#.write(to: url, atomically: true, encoding: .utf8)
+
     store.load()
 
     #expect(store.settings == Settings())
@@ -39,32 +80,6 @@ private func makeTempDirectory() -> URL {
     reader.load()
 
     #expect(reader.settings == nonDefault)
-}
-
-@Test @MainActor func loadingCorruptJSONYieldsDefaultsWithoutThrowing() {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: dir) }
-    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    let url = dir.appendingPathComponent("settings.json")
-    try? Data("{ not json".utf8).write(to: url)
-
-    let store = SettingsStore(url: url)
-    store.load()
-
-    #expect(store.settings == Settings())
-}
-
-@Test @MainActor func loadingJSONOfTheWrongShapeYieldsDefaults() {
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: dir) }
-    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    let url = dir.appendingPathComponent("settings.json")
-    try? Data(#"{"gaps": "huge"}"#.utf8).write(to: url)
-
-    let store = SettingsStore(url: url)
-    store.load()
-
-    #expect(store.settings == Settings())
 }
 
 @Test @MainActor func loadingCreatesNoFile() throws {
@@ -166,4 +181,21 @@ private func makeTempDirectory() -> URL {
     let reader = SettingsStore(url: url)
     reader.load()
     #expect(reader.settings == good)
+}
+
+@Test @MainActor func aCorruptFileIsKeptAsideRatherThanOverwritten() throws {
+    // A missing brace should not cost the user every preference. Without this the
+    // next save silently replaces the only copy of what they had written.
+    let dir = makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let url = dir.appendingPathComponent("settings.json")
+    let broken = #"{"gaps": {"inner": 12, "outer": 6}"#
+    try broken.write(to: url, atomically: true, encoding: .utf8)
+
+    let store = SettingsStore(url: url)
+    store.load()
+
+    #expect(store.settings == Settings())
+    let kept = try String(contentsOf: url.appendingPathExtension("invalid"), encoding: .utf8)
+    #expect(kept == broken)
 }

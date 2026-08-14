@@ -77,17 +77,24 @@ lands flush while a tiled one is inset. Fix by insetting the destination visible
 before mapping. Left open because it needs a decision the plan did not make: whether an untiled window
 should be gapped at all, given we do not know it was ever meant to touch an edge.
 
-**`isSafeToApply` permits a zero-size rect.**
-`Sources/Geometry/FrameMath.swift` — a zero-width window is as ungrabbable as a non-finite one. Safety
-currently rests entirely on the gap clamp, which is the only reachable way to produce one (an inner gap
-of 500 on a 100pt display yields width 0, measured). If any other caller can produce a zero-size frame,
-this becomes reachable again. Deliberately not tightened in M3: M2 verified the guard in its present
-form, and the reachable cause is closed.
+**The gap cap of 100 is a judgement, not a derivation — and it does NOT prevent degenerate windows.**
+`Sources/Config/Settings.swift` — an earlier version of this document claimed the cap closed the
+zero-size hazard. That was false, and it was load-bearing, because it was the stated reason for leaving
+`isSafeToApply` permissive. `inner: 100` is a value the Settings window itself offers, and a 12-column
+span is one the validator accepts; together, on an ordinary 1080p display, they produce a **zero-height**
+bottom half. The claim only ever checked two columns.
 
-**The gap cap of 100 is a judgement, not a derivation.**
-`Sources/Config/Settings.swift` — chosen because it keeps every placement non-degenerate on any display
-at least ~200pt wide, which is every real display. It is not derived from the display geometry, and a
-user who genuinely wants a 150pt gap on a 6K display cannot have one.
+Closed properly instead of re-argued: `targetFrame` now returns nil for a degenerate result, and
+`isSafeToApply` requires a strictly positive size. Both are tested
+(`aGapWideEnoughToConsumeTheAxisYieldsNoPlacement`, `aZeroSizeRectIsRefused`). What remains deferred is
+only the cap itself: 100 is still an arbitrary number, and a user who wants a 150pt gap on a 6K display
+cannot have one.
+
+**The skip list also suppresses Snap Back.**
+`Sources/Core/ActionRouter.swift` — the skip check is the first thing `perform` does, so adding an app
+to the skip list makes any window we previously moved unrestorable. Defensible as "skipped means hands
+off entirely", and left as-is deliberately, but it is a surprise worth documenting rather than
+discovering.
 
 **The skip list matches bundle identifiers exactly, with no wildcards.**
 Adequate for the stated use, but there is no way to skip, say, every JetBrains IDE without listing each.

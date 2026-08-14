@@ -42,6 +42,12 @@ public final class SettingsStore {
             return
         }
         guard let decoded = try? JSONDecoder().decode(Settings.self, from: data) else {
+            // Keep the unreadable file beside the good one before defaults take
+            // over. Otherwise the first subsequent save overwrites it, and a
+            // single missing brace silently costs the user every preference —
+            // the one remaining path in this type that destroys recoverable data.
+            // Best-effort: failing to make the copy must not stop the app.
+            try? data.write(to: url.appendingPathExtension("invalid"))
             settings = Settings()
             return
         }
