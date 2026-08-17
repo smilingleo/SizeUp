@@ -3,13 +3,20 @@ import Testing
 @testable import SpaceKit
 @testable import Geometry
 
+/// The real `Display Identifier` values this machine reports. Fixtures use them
+/// rather than readable names like "built-in" because a non-UUID identifier is now
+/// discarded — it would abort the process if passed to SkyLight — so a fixture
+/// with a made-up name would be testing a case that cannot occur.
+private let builtInDisplay = "37D8832A-2D66-02CA-B9F7-8F30A301B230"
+private let externalDisplay = "1F0F1E2D-3C4B-5A69-7887-96A5B4C3D2E1"
+
 /// Shaped like the real output of `SLSCopyManagedDisplaySpaces` on this
 /// machine, captured in probe.swift: a built-in display with ManagedSpaceIDs
 /// [1, 3] and an external display with [288].
 private func realMachineFixture() -> [[String: Any]] {
     [
         [
-            "Display Identifier": "built-in",
+            "Display Identifier": builtInDisplay,
             "Current Space": ["ManagedSpaceID": 1, "type": 0],
             "Spaces": [
                 ["ManagedSpaceID": 1, "type": 0],
@@ -17,7 +24,7 @@ private func realMachineFixture() -> [[String: Any]] {
             ],
         ],
         [
-            "Display Identifier": "external",
+            "Display Identifier": externalDisplay,
             "Current Space": ["ManagedSpaceID": 288, "type": 0],
             "Spaces": [
                 ["ManagedSpaceID": 288, "type": 0],
@@ -29,10 +36,10 @@ private func realMachineFixture() -> [[String: Any]] {
 @Test func parsesTheRealMachinesLayoutIntoTwoDisplays() {
     let layouts = SpaceService.parse(realMachineFixture())
     #expect(layouts.count == 2)
-    #expect(layouts[0].displayIdentifier == "built-in")
+    #expect(layouts[0].displayIdentifier == builtInDisplay)
     #expect(layouts[0].spaces == [SpaceIdentifier(1), SpaceIdentifier(3)])
     #expect(layouts[0].current == SpaceIdentifier(1))
-    #expect(layouts[1].displayIdentifier == "external")
+    #expect(layouts[1].displayIdentifier == externalDisplay)
     #expect(layouts[1].spaces == [SpaceIdentifier(288)])
     #expect(layouts[1].current == SpaceIdentifier(288))
 }
@@ -48,7 +55,7 @@ private func realMachineFixture() -> [[String: Any]] {
     // Without a current space there is nothing sensible to report even if
     // the strip itself parsed, so the whole display entry is dropped.
     let fixture: [[String: Any]] = [
-        ["Display Identifier": "built-in", "Spaces": [["ManagedSpaceID": 1, "type": 0]]]
+        ["Display Identifier": builtInDisplay, "Spaces": [["ManagedSpaceID": 1, "type": 0]]]
     ]
     #expect(SpaceService.parse(fixture).isEmpty)
 }
@@ -58,7 +65,7 @@ private func realMachineFixture() -> [[String: Any]] {
     // future macOS changing the shape entirely.
     let fixture: [[String: Any]] = [
         [
-            "Display Identifier": "built-in",
+            "Display Identifier": builtInDisplay,
             "Current Space": ["ManagedSpaceID": 1, "type": 0],
             "Spaces": "not an array",
         ]
@@ -73,7 +80,7 @@ private func realMachineFixture() -> [[String: Any]] {
     // the rest of the strip with it.
     let fixture: [[String: Any]] = [
         [
-            "Display Identifier": "built-in",
+            "Display Identifier": builtInDisplay,
             "Current Space": ["ManagedSpaceID": 1, "type": 0],
             "Spaces": [["ManagedSpaceID": 1, "type": 0], ["type": 0], ["ManagedSpaceID": 3, "type": 0]],
         ]
@@ -170,7 +177,7 @@ private func realMachineFixture() -> [[String: Any]] {
 @Test func aSpaceWhoseTypeIsUnrecognisedOrMissingIsNotATarget() throws {
     let layouts = SpaceService.parse([
         [
-            "Display Identifier": "display",
+            "Display Identifier": builtInDisplay,
             "Current Space": ["ManagedSpaceID": 1, "type": 0],
             "Spaces": [
                 ["ManagedSpaceID": 1, "type": 0],
@@ -195,7 +202,7 @@ private func realMachineFixture() -> [[String: Any]] {
 @Test func aNegativeManagedSpaceIDIsSkippedRatherThanFatal() throws {
     let layouts = SpaceService.parse([
         [
-            "Display Identifier": "display",
+            "Display Identifier": builtInDisplay,
             "Current Space": ["ManagedSpaceID": 1, "type": 0],
             "Spaces": [
                 ["ManagedSpaceID": 1, "type": 0],
@@ -214,7 +221,7 @@ private func realMachineFixture() -> [[String: Any]] {
 @Test func aNegativeCurrentSpaceIDYieldsNoLayoutRatherThanFatal() {
     let layouts = SpaceService.parse([
         [
-            "Display Identifier": "display",
+            "Display Identifier": builtInDisplay,
             "Current Space": ["ManagedSpaceID": -1, "type": 0],
             "Spaces": [["ManagedSpaceID": 1, "type": 0]],
         ]
@@ -289,7 +296,7 @@ private func realMachineFixture() -> [[String: Any]] {
 @Test func locateYieldsNothingForAWindowInsideAFullScreenSpace() {
     let layouts = SpaceService.parse([
         [
-            "Display Identifier": "built-in",
+            "Display Identifier": builtInDisplay,
             "Current Space": ["ManagedSpaceID": 398, "type": 4],
             "Spaces": [
                 ["ManagedSpaceID": 1, "type": 0],
@@ -299,4 +306,45 @@ private func realMachineFixture() -> [[String: Any]] {
     ])
 
     #expect(SpaceService.locate(windowOn: [SpaceIdentifier(398)], in: layouts) == nil)
+}
+
+/// A `Display Identifier` that is not a UUID is discarded, because passing one on
+/// to `SLSManagedDisplaySetCurrentSpace` ABORTS THE PROCESS.
+///
+/// Measured, not feared: "garbage" and "" both die with `Assertion failed:
+/// (uuid_parse(...) == 0), function parse_uuid_string, file CGSSpace.c`, exit 134.
+/// It is a C assertion inside a system framework and cannot be caught, so the only
+/// defence is never to make the call.
+///
+/// This is the fourth trap of this shape in this project, and the second one in
+/// this very file — the fix for the first two hardened the integers a review named
+/// and walked straight past a string in the same dictionary.
+@Test func aDisplayIdentifierThatIsNotAUUIDIsDiscardedRatherThanPassedOn() {
+    let malformed = ["garbage", "", "not-a-uuid-at-all-xyz", "37D8832A-2D66-02CA"]
+    for identifier in malformed {
+        let layouts = SpaceService.parse([
+            [
+                "Display Identifier": identifier,
+                "Current Space": ["ManagedSpaceID": 1, "type": 0],
+                "Spaces": [["ManagedSpaceID": 1, "type": 0]],
+            ]
+        ])
+        #expect(layouts.isEmpty, "\(identifier.debugDescription) must not reach SkyLight")
+    }
+}
+
+/// The two forms measured to be safe are both kept: a well-formed UUID, and the
+/// literal "Main", which the framework accepts as a real value. Excluding "Main"
+/// would silently disable Spaces on a display macOS names that way.
+@Test func wellFormedAndMainDisplayIdentifiersAreKept() {
+    for identifier in ["37D8832A-2D66-02CA-B9F7-8F30A301B230", "Main"] {
+        let layouts = SpaceService.parse([
+            [
+                "Display Identifier": identifier,
+                "Current Space": ["ManagedSpaceID": 1, "type": 0],
+                "Spaces": [["ManagedSpaceID": 1, "type": 0]],
+            ]
+        ])
+        #expect(layouts.map(\.displayIdentifier) == [identifier])
+    }
 }

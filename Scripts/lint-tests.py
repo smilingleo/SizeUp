@@ -33,13 +33,25 @@ WHAT THIS CANNOT CATCH: `#expect(boolA == boolB)`, where neither side is a
 literal. Detecting it needs type information, which a lint does not have. The
 rule for contributors is therefore simpler than the lint: **never use `==` or
 `!=` on Bools inside `#expect`.** Write `#expect(x)` and `#expect(!x)`.
+
+Every widening of this file came from someone defeating it, never from
+imagination: `f() == false` (nested parentheses), a two-line assertion, then
+`#expect (x == false)` (one space) and `#expect(x == Bool(false))`. Each was
+confirmed silent here AND vacuously passing at runtime before being fixed. If you
+find another, add it and say so in the commit -- do not quietly widen the regex.
 """
 
 import pathlib
 import re
 import sys
 
-BAD = re.compile(r"(==|!=)\s*(true|false)\b|\b(true|false)\s*(==|!=)")
+# Matches a comparison against a Bool literal in any spelling seen so far:
+# `== false`, `!= true`, `== Bool(false)`, `== (false)`, and the same reversed.
+# `Bool(` and stray parentheses are allowed for because a reviewer defeated the
+# previous version with `#expect(x == Bool(false))` — which the lint passed and
+# which then passed vacuously at runtime.
+LITERAL = r"[(\s]*(?:Bool\s*\()?[(\s]*(?:true|false)\b"
+BAD = re.compile(rf"(?:==|!=){LITERAL}|(?:true|false)\s*\)*\s*(?:==|!=)")
 
 
 def expectations(source: str):
@@ -48,7 +60,9 @@ def expectations(source: str):
     Tracks parenthesis depth so an assertion spanning several lines is examined
     as one expression rather than as unrelated fragments.
     """
-    for match in re.finditer(r"#expect\(", source):
+    # `\s*` before the paren: Swift permits `#expect (x)`, and a single space
+    # defeated the previous version of this lint entirely.
+    for match in re.finditer(r"#expect\s*\(", source):
         start = match.end()
         depth = 1
         index = start

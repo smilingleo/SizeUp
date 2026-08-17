@@ -165,7 +165,10 @@ private let spaceThree = SpaceIdentifier(3)
 /// measured — including the identical-frames form that slips past the Snap Back
 /// test above, and a Space move that wrongly changes the frame. The retained
 /// action is asserted as well as the step, because the step alone survived one of
-/// those mutations.
+/// those mutations — measured: the step alone survives BOTH the foreign-frame and
+/// the identical-frames mutation, and only changes under a Space move that wrongly
+/// sets a frame. (An earlier version of this comment said "one". It was a measured
+/// claim, stated from memory, and wrong.)
 @MainActor
 @Test func spaceMoveDoesNotAdvanceTheSizeCycle() {
     let window = TestWindow(frame: CGRect(x: 0, y: 0, width: 800, height: 600), windowID: 42)

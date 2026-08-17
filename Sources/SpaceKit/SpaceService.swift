@@ -70,7 +70,9 @@ public final class SpaceService: Sendable {
     /// traps]".
     static func parse(_ displays: [[String: Any]]) -> [SpaceLayout] {
         displays.compactMap { display in
-            guard let identifier = display["Display Identifier"] as? String else { return nil }
+            guard let identifier = display["Display Identifier"] as? String,
+                  isUsableDisplayIdentifier(identifier)
+            else { return nil }
             let spaceDictionaries = display["Spaces"] as? [[String: Any]] ?? []
             // Only ordinary user Spaces are targets. A full-screen application
             // occupies its own Space of `type` 4, and macOS puts it IN THE STRIP
@@ -87,6 +89,25 @@ public final class SpaceService: Sendable {
             else { return nil }
             return SpaceLayout(displayIdentifier: identifier, spaces: spaces, current: current)
         }
+    }
+
+    /// `SLSManagedDisplaySetCurrentSpace` ABORTS THE PROCESS on an identifier it
+    /// cannot parse — measured: "garbage" and "" both die with
+    /// `Assertion failed: (uuid_parse(...) == 0), function parse_uuid_string,
+    /// file CGSSpace.c`, exit 134. It is a C assertion inside the window server
+    /// framework, so it cannot be caught.
+    ///
+    /// This is the FOURTH launch-killing conversion of this shape in this project,
+    /// and it was missed twice: the review that found the integer ones described a
+    /// class of defect, and the fix hardened only the two integers it named while
+    /// walking past a string from the very same dictionary. Hence: everything taken
+    /// out of this dictionary is validated, not just the numbers.
+    ///
+    /// "Main" is accepted because it is a real value the framework handles — also
+    /// measured, alongside a well-formed UUID naming no attached display, which is
+    /// likewise safe.
+    private static func isUsableDisplayIdentifier(_ identifier: String) -> Bool {
+        identifier == "Main" || UUID(uuidString: identifier) != nil
     }
 
     /// `type` 0 is an ordinary Space. 4 is a full-screen application's own
@@ -165,8 +186,14 @@ public final class SpaceService: Sendable {
     /// exactly the "window has vanished" outcome that rule exists to prevent.
     ///
     /// The read-back is cheap enough to do synchronously in a hotkey handler:
-    /// measured on this machine, the new Space was already visible to the first
-    /// read, and a single read costs three to six *milliseconds*.
+    /// measured on this machine, the new Space is already visible to the first read,
+    /// and a warm read of the Space layout costs 0.05–0.12ms. The FIRST such call in
+    /// a process costs about 40ms, presumably connecting to the window server; that
+    /// happens once, at the first Spaces shortcut of the session.
+    ///
+    /// An earlier version of this comment claimed "three to six milliseconds" per
+    /// read. That figure was never reproducible and is corrected here rather than
+    /// left to be believed.
     ///
     /// It is still a race — the window server is another process — so the read is
     /// retried a bounded number of times. A single read that lost the race would

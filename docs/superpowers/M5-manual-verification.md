@@ -86,7 +86,8 @@ strip `[1, 3]` into `[1, 398, 3]`.
   working, the menu says **"(unavailable on this macOS)"** next to them, and the other thirteen actions
   are unaffected. That degradation is the reason the private API is confined to one target.
 - **A failing move can take about 50ms** of main-thread time, because the move is confirmed by polling the
-  window server rather than trusted. A successful move is confirmed on the first read.
+  window server rather than trusted. A successful move is confirmed on the first read. The very first
+  Spaces shortcut of a session costs an extra ~40ms connecting to the window server.
 - **Above/Below cannot be implemented.** See section 5.
 - **Open at Login is still greyed out.** Ad-hoc signing, unrelated.
 

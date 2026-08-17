@@ -12,11 +12,12 @@ The rules and, more usefully, WHY each exists:
   Geometry   -- CoreGraphics only. It is the frame arithmetic, and it stays
                 testable and reasonable precisely because it cannot see AppKit,
                 a screen, a window, or a settings file.
-  Config     -- no Carbon, no AppKit, no Core. It holds Codable DTOs for
-                hand-editable JSON. It must not gain the ability to construct
-                the geometry types, because those use `precondition` and would
-                trap on a hand-edited file -- which is the entire reason the DTOs
-                exist as separate types.
+  Config     -- no Carbon, no AppKit, no Core, no Hotkeys. It holds Codable DTOs
+                for hand-editable JSON, and it DOES depend on Geometry: it must
+                validate before constructing geometry types, which use
+                `precondition` and would trap on a hand-edited file. That is why
+                the DTOs are separate types, and why `Config` must not reach
+                `Core` and start making routing decisions with them.
   Core       -- no Foundation, no Config, no SpaceKit. The routing logic. Keeping
                 Foundation out is what keeps it honest about being pure decision
                 logic over injected seams; concrete collaborators are assembled
@@ -38,7 +39,12 @@ FORBIDDEN_IMPORTS = {
                  "Config", "WindowKit", "Hotkeys", "SpaceKit"},
     "Config": {"AppKit", "Carbon", "Core", "Hotkeys", "SpaceKit", "WindowKit"},
     "Core": {"Foundation", "Config", "SpaceKit", "AppKit"},
-    "Hotkeys": {"Core", "Config", "SpaceKit", "WindowKit"},
+    # Geometry included because `Hotkeys` declares NO dependencies in
+    # Package.swift. The first version of this table omitted it, so the lint
+    # permitted an import the build would have rejected -- encoding a rule from
+    # prose instead of from Package.swift, which is exactly the mistake that makes
+    # a lint worth less than the file it claims to guard.
+    "Hotkeys": {"Core", "Config", "SpaceKit", "WindowKit", "Geometry"},
     "SpaceKit": {"Core", "Config", "Hotkeys", "WindowKit", "AppKit"},
     "WindowKit": {"Core", "Config", "Hotkeys"},
 }
@@ -53,7 +59,15 @@ FORBIDDEN_IMPORTS = {
 # to `CFData`, which is entirely public API. Flagging it made the lint cry wolf
 # about correct code on its first run, and a lint nobody believes is worse than
 # no lint.
-PRIVATE_API = re.compile(r"\bdlsym\b|\bdlopen\b|\b_AX[A-Za-z]+")
+# `@_silgen_name` and `CFBundleGetFunctionPointerForName` are here because a
+# reviewer reached a private symbol from `Core` with each while this lint stayed
+# silent and the build stayed clean. `dlopen`/`dlsym` look a symbol up by name at
+# runtime; `@_silgen_name` binds one at link time without a header; the CFBundle
+# call is the Core Foundation spelling of `dlsym`.
+PRIVATE_API = re.compile(
+    r"\bdlsym\b|\bdlopen\b|\b_AX[A-Za-z]+"
+    r"|@_silgen_name|\bCFBundleGetFunctionPointerForName\b"
+)
 PRIVATE_API_ALLOWED = {"SpaceKit"}
 
 
