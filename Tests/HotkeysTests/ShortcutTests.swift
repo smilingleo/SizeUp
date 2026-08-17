@@ -1,3 +1,4 @@
+import AppKit
 import Testing
 @testable import Hotkeys
 
@@ -56,4 +57,37 @@ import Testing
 @Test func displayStringHandlesLetterAndPunctuationKeys() {
     #expect(Shortcut(keyCode: KeyCode.m, modifierFlags: 1_835_008).displayString == "⌃⌥⌘M")
     #expect(Shortcut(keyCode: KeyCode.slash, modifierFlags: 1_835_008).displayString == "⌃⌥⌘/")
+}
+
+// MARK: - Canonical modifier flags
+
+@Test func aRecordedShortcutEqualsTheSameShortcutWrittenDown() {
+    // 1835049 is what NSEvent actually reported for a real ⌃⌥⌘/ keypress; the
+    // extra 41 are device-dependent bits naming which physical modifier keys
+    // were used. 1835008 is what DefaultKeymap stores for the same combination.
+    // These must be one value, because Shortcut is compared and hashed by raw
+    // flags: when they differed, conflict detection found nothing and two
+    // actions were left holding one key with no warning.
+    let recorded = Shortcut(keyCode: 44, modifierFlags: 1_835_049)
+    let written = Shortcut(keyCode: 44, modifierFlags: 1_835_008)
+
+    #expect(recorded == written)
+    #expect(recorded.hashValue == written.hashValue)
+    #expect(recorded.modifierFlags == 1_835_008)
+    // Canonicalising must not lose any modifier that matters.
+    #expect(recorded.carbonModifiers == written.carbonModifiers)
+    #expect(recorded.displayString == "⌃⌥⌘/")
+}
+
+@Test func canonicalisationKeepsShiftAndDropsOnlyTheDeviceBits() {
+    let shifted = Shortcut(keyCode: 126, modifierFlags: 917_504 | 0x29)
+    #expect(shifted.modifierFlags == 917_504)
+    #expect(shifted.displayString == "⌃⌥⇧↑")
+    // Caps Lock and the numeric-pad bit are not part of a hotkey either.
+    let padded = Shortcut(
+        keyCode: 8,
+        modifierFlags: 1_835_008 | NSEvent.ModifierFlags.capsLock.rawValue
+            | NSEvent.ModifierFlags.numericPad.rawValue
+    )
+    #expect(padded == Shortcut(keyCode: 8, modifierFlags: 1_835_008))
 }

@@ -199,3 +199,58 @@ private func makeTempDirectory() -> URL {
     let kept = try String(contentsOf: url.appendingPathExtension("invalid"), encoding: .utf8)
     #expect(kept == broken)
 }
+
+@Test @MainActor func updatingOneFieldPreservesEveryOtherField() throws {
+    // The regression this API exists to make impossible. The General tab of the
+    // Preferences window predates shortcut overrides and rebuilt a whole
+    // `Settings` from the three fields it knew about, so adjusting a gap silently
+    // erased every rebound shortcut -- the headline feature of the milestone that
+    // added them. Reconstruction loses whatever the editor has not heard of;
+    // mutation cannot.
+    let dir = makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let store = SettingsStore(url: dir.appendingPathComponent("settings.json"))
+
+    try store.save(
+        Settings(
+            gaps: GapSettings(inner: 8, outer: 4),
+            cycle: [SpanSetting(occupied: 1, columns: 3)],
+            skippedBundleIdentifiers: ["com.example.terminal"],
+            shortcutOverrides: [
+                ShortcutSetting(action: "center", keyCode: 105, modifierFlags: 1_835_008)
+            ]
+        )
+    )
+
+    try store.update { $0.gaps = GapSettings(inner: 20, outer: 10) }
+
+    #expect(store.settings.gaps == GapSettings(inner: 20, outer: 10))
+    #expect(store.settings.shortcutOverrides.count == 1)
+    #expect(store.settings.shortcutOverrides.first?.action == "center")
+    #expect(store.settings.cycle == [SpanSetting(occupied: 1, columns: 3)])
+    #expect(store.settings.skippedBundleIdentifiers == ["com.example.terminal"])
+
+    // And it survives a round trip, not just the in-memory copy.
+    let reread = SettingsStore(url: dir.appendingPathComponent("settings.json"))
+    reread.load()
+    #expect(reread.settings == store.settings)
+}
+
+@Test @MainActor func aFailedUpdateDoesNotChangeTheInMemorySettings() throws {
+    // `update` mutates a copy and saves it, so a save that throws must leave the
+    // store reporting what is actually on disk. Reporting the attempted value
+    // would make the UI show settings the router is not using.
+    let dir = makeTempDirectory()
+    defer {
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path)
+        try? FileManager.default.removeItem(at: dir)
+    }
+    let store = SettingsStore(url: dir.appendingPathComponent("settings.json"))
+    try store.save(Settings(gaps: GapSettings(inner: 8, outer: 4)))
+    try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: dir.path)
+
+    #expect(throws: (any Error).self) {
+        try store.update { $0.gaps = GapSettings(inner: 99, outer: 99) }
+    }
+    #expect(store.settings.gaps == GapSettings(inner: 8, outer: 4))
+}

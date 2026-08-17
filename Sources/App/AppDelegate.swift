@@ -29,6 +29,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         settings.load()
         rebuildRouter()
+        // Before the status item is built, and independently of whether
+        // Accessibility has been granted. `resolveKeymap` used to run only
+        // inside `registerHotkeys`, which is gated on that permission, so on any
+        // launch without it the menu listed the DEFAULT shortcuts while the
+        // Shortcuts tab showed the real ones — and an unbound action appeared
+        // bound.
+        resolveKeymap()
 
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
@@ -50,6 +57,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         hotkeys.unregisterAll()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
+    }
+
+    /// The keymap actually in force, defaults merged with the user's overrides.
+    ///
+    /// Held rather than recomputed at each use so the status menu cannot disagree
+    /// with what is registered: the menu shows each action's shortcut, and reading
+    /// `DefaultKeymap` there would confidently display the wrong keys for every
+    /// rebound action.
+    private var keymap = KeymapResolver.resolve(overrides: [])
+
+    /// Translates the persisted DTOs into the domain type `Core` merges.
+    ///
+    /// `Core` must not depend on `Config` and `Config` must not import Carbon, so
+    /// this crossing has to happen somewhere; it happens here, where it is a
+    /// `compactMap` whose correctness is visible by inspection. The parts with
+    /// decisions in them are in `Config.ShortcutSetting.resolved`, which drops
+    /// unknown identifiers and modifier-less keys, and in `KeymapResolver`.
+    private func resolveKeymap() {
+        keymap = KeymapResolver.resolve(overrides: coreOverrides(from: settings.settings))
     }
 
     /// Rebuilt rather than mutated when settings change.
@@ -81,8 +107,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         activeApplicationTracker.noteActivation(of: app)
     }
 
+    /// Idempotent: unregisters first, so this doubles as "re-register after a
+    /// rebind". Without the unregister, every rebind would leave the previous
+    /// shortcut live and `RegisterEventHotKey` would refuse the new one as
+    /// already claimed by this app.
     private func registerHotkeys() {
-        for (shortcut, action) in DefaultKeymap.bindings {
+        resolveKeymap()
+        // Re-registering during recording would restore exactly the trap
+        // `suspendHotkeys` exists to avoid: the General tab saving, or a SizeUp
+        // import finishing, would re-arm the hotkeys under a recorder that is
+        // still listening, and the next keystroke would move a window instead of
+        // being recorded. The menu is still refreshed, so nothing looks stale.
+        guard !isRecording else {
+            updateStatusIcon()
+            rebuildMenu()
+            return
+        }
+        hotkeys.unregisterAll()
+        for binding in keymap.bindings {
+            guard let shortcut = binding.shortcut else { continue }
+            let action = binding.action
             hotkeys.register(shortcut) { [weak self] in
                 self?.router.perform(action)
             }
@@ -90,6 +134,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updateStatusIcon()
         rebuildMenu()
     }
+
+    /// Releases every hotkey so the shortcut recorder can see keystrokes.
+    ///
+    /// A registered Carbon hotkey consumes its keystroke before the focused
+    /// application receives it, so a recorder built on a local event monitor is
+    /// blind to exactly the shortcuts a user wants to change: pressing the
+    /// current binding would perform its action instead of being recorded.
+    private func suspendHotkeys() {
+        isRecording = true
+        hotkeys.unregisterAll()
+    }
+
+    /// Paired with `suspendHotkeys`. Must run even if the Preferences window is
+    /// closed mid-recording, or the app stays silently inert with every shortcut
+    /// released and no indication why.
+    private func resumeHotkeys() {
+        isRecording = false
+        guard AccessibilityPermission.isGranted else { return }
+        registerHotkeys()
+    }
+
+    /// True only while the shortcut recorder is listening.
+    private var isRecording = false
 
     /// The permission dialog is asynchronous and grants without relaunching,
     /// so poll until it is granted, then register.
@@ -161,7 +228,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(.separator())
         }
 
-        for (shortcut, action) in DefaultKeymap.bindings {
+        for binding in keymap.bindings {
+            let action = binding.action
             let item = NSMenuItem(
                 title: DefaultKeymap.title(for: action),
                 action: #selector(menuAction(_:)),
@@ -169,11 +237,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             )
             item.target = self
             item.representedObject = ActionBox(action: action)
-            item.toolTip = shortcut.displayString
+            // An action the user deliberately unbound stays listed and clickable —
+            // the menu is the only way to invoke it once it has no key.
+            item.toolTip = binding.shortcut?.displayString ?? "No shortcut"
+            if binding.shortcut == nil { item.title += "  (no shortcut)" }
             // When the handler failed to install, every shortcut carries that
             // same reason and the banner above already says so once. Repeating
             // it on all 13 items buries the banner.
-            if !hotkeys.handlerInstallFailed, let failure = hotkeys.failure(for: shortcut) {
+            if !hotkeys.handlerInstallFailed, let shortcut = binding.shortcut,
+                let failure = hotkeys.failure(for: shortcut) {
                 // Name the reason. "unavailable" gave the user no way to tell a
                 // bug in our keymap from SizeUp still holding the shortcut.
                 item.title += "  (\(failure.explanation))"
@@ -196,6 +268,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // shortcut menu, then the login item) — see the M3 plan.
         settingsItem.isEnabled = true
         menu.addItem(settingsItem)
+
+        let importItem = NSMenuItem(
+            title: "Import Shortcuts from SizeUp…",
+            action: #selector(importFromSizeUp),
+            keyEquivalent: ""
+        )
+        importItem.target = self
+        // Offered only when there is something to import. Shown-but-disabled
+        // rather than hidden, so a user who expected it can see that it exists
+        // and that SizeUp's preferences were not found, rather than concluding
+        // the feature is missing.
+        let sizeUpPresent = FileManager.default.fileExists(
+            atPath: SizeUpImporter.defaultURL.path
+        )
+        importItem.isEnabled = sizeUpPresent
+        if !sizeUpPresent {
+            importItem.toolTip = "No SizeUp preferences found at \(SizeUpImporter.defaultURL.path)"
+        }
+        menu.addItem(importItem)
 
         let launch = NSMenuItem(
             title: "Open at Login",
@@ -221,11 +312,84 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func showPreferences() {
         if preferencesWindow == nil {
-            preferencesWindow = PreferencesWindow(store: settings) { [weak self] in
-                self?.rebuildRouter()
-            }
+            preferencesWindow = PreferencesWindow(
+                store: settings,
+                onChange: { [weak self] in
+                    self?.rebuildRouter()
+                    // Shortcuts are part of settings now, so a change may have
+                    // rebound a key. Re-registering unconditionally is cheaper
+                    // than working out whether it did, and getting that wrong
+                    // leaves the old key live and the new one refused.
+                    self?.registerHotkeys()
+                },
+                onRecordingChange: { [weak self] isRecording in
+                    if isRecording {
+                        self?.suspendHotkeys()
+                    } else {
+                        self?.resumeHotkeys()
+                    }
+                }
+            )
         }
         preferencesWindow?.show()
+    }
+
+    /// Confirms, imports, then reports — all three, because this replaces
+    /// shortcuts the user may have spent time setting up.
+    ///
+    /// An `NSAlert` rather than the tooltips M2 settled on for the login item:
+    /// that state changes behind the app's back and has no moment to interrupt,
+    /// whereas this is a destructive action the user just chose, so the one
+    /// moment they are definitely looking is now.
+    @objc private func importFromSizeUp() {
+        let result = SizeUpImporter.read(at: SizeUpImporter.defaultURL)
+
+        guard !result.overrides.isEmpty else {
+            let empty = NSAlert()
+            empty.messageText = "Nothing to import"
+            empty.informativeText = result.skipped.isEmpty
+                ? "SizeUp's preferences were found but contain no shortcuts."
+                : "None of SizeUp's \(result.skipped.count) shortcut entries could be read."
+            empty.runModal()
+            return
+        }
+
+        let confirm = NSAlert()
+        confirm.messageText = "Import \(result.overrides.count) shortcuts from SizeUp?"
+        confirm.informativeText =
+            "This replaces every shortcut currently set in Sizeup2. "
+            + "You can undo it with Restore Defaults in Settings, "
+            + "which returns to Sizeup2's own defaults rather than to whatever you had before."
+        confirm.addButton(withTitle: "Import")
+        confirm.addButton(withTitle: "Cancel")
+        guard confirm.runModal() == .alertFirstButtonReturn else { return }
+
+        let outcome = NSAlert()
+        do {
+            try settings.update { $0.shortcutOverrides = result.overrides }
+            rebuildRouter()
+            registerHotkeys()
+            preferencesWindow?.refresh()
+            outcome.messageText = "Imported \(result.overrides.count) shortcuts"
+            var detail = "Sizeup2 is now using SizeUp's shortcuts."
+            if !result.skipped.isEmpty {
+                // Naming them, because a partial import that looks total is how a
+                // user ends up pressing a key that will never work again.
+                detail += " Skipped \(result.skipped.count): "
+                    + result.skipped.sorted().joined(separator: ", ") + "."
+            }
+            // Spaces bindings import but cannot fire yet. Saying so here is the
+            // difference between a known limitation and an apparent bug.
+            if result.overrides.contains(where: { $0.action.hasPrefix("space.") }) {
+                detail += " SizeUp's Spaces shortcuts were imported but do nothing yet."
+            }
+            outcome.informativeText = detail
+        } catch {
+            outcome.messageText = "Could not save the imported shortcuts"
+            outcome.informativeText = error.localizedDescription
+            outcome.alertStyle = .warning
+        }
+        outcome.runModal()
     }
 
     @objc private func openAccessibilitySettings() {

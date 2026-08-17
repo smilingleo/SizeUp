@@ -191,13 +191,15 @@ final class PreferencesViewModel {
     }
 
     private func save() {
-        let newSettings = Config.Settings(
-            gaps: GapSettings(inner: innerGap, outer: outerGap),
-            cycle: cycle,
-            skippedBundleIdentifiers: skippedBundleIdentifiers
-        )
         do {
-            try store.save(newSettings)
+            // Mutating, not reconstructing: this editor knows nothing about
+            // shortcut overrides, and rebuilding a whole `Settings` here wiped
+            // them every time a gap changed.
+            try store.update {
+                $0.gaps = GapSettings(inner: innerGap, outer: outerGap)
+                $0.cycle = cycle
+                $0.skippedBundleIdentifiers = skippedBundleIdentifiers
+            }
             errorMessage = nil
             // Only rebuild the router when something was actually
             // persisted; a failed save left the on-disk (and in-store)

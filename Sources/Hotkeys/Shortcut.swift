@@ -23,10 +23,29 @@ public struct Shortcut: Hashable, Sendable {
     public let keyCode: UInt32
     public let modifierFlags: UInt
 
+    /// Canonicalises `modifierFlags` to the four modifiers a hotkey can carry.
+    ///
+    /// `NSEvent.modifierFlags` includes device-dependent bits that say WHICH
+    /// physical Control or Shift key was used, so a recorded ⌃⌥⌘/ arrives as
+    /// 1835049 where the same combination written down is 1835008. Since this
+    /// type is `Hashable` and compared by raw value, the two were unequal, and
+    /// every comparison that matters silently stopped working: conflict
+    /// detection found nothing, so recording a shortcut another action already
+    /// held left BOTH holding it — measured in the live UI, with Center and Snap
+    /// Back displaying the same keys and no warning shown. `HotkeyManager` would
+    /// then register whichever came first and have the other refused. Lookups by
+    /// shortcut, such as `failure(for:)`, failed the same way.
+    ///
+    /// Normalising here rather than at the recorder means no future caller can
+    /// reintroduce it, and the value that gets persisted is canonical too.
     public init(keyCode: UInt32, modifierFlags: UInt) {
         self.keyCode = keyCode
-        self.modifierFlags = modifierFlags
+        self.modifierFlags = modifierFlags & Self.significantModifiers
     }
+
+    private static let significantModifiers: UInt = NSEvent.ModifierFlags(
+        [.control, .option, .shift, .command]
+    ).rawValue
 
     /// The Carbon modifier bitmask for `RegisterEventHotKey`.
     ///
@@ -50,19 +69,12 @@ public struct Shortcut: Hashable, Sendable {
         if flags.contains(.option) { out += "⌥" }
         if flags.contains(.shift) { out += "⇧" }
         if flags.contains(.command) { out += "⌘" }
-        return out + Self.keyName(keyCode)
+        return out + keyName
     }
 
-    private static func keyName(_ code: UInt32) -> String {
-        switch code {
-        case KeyCode.leftArrow: return "←"
-        case KeyCode.rightArrow: return "→"
-        case KeyCode.downArrow: return "↓"
-        case KeyCode.upArrow: return "↑"
-        case KeyCode.m: return "M"
-        case KeyCode.c: return "C"
-        case KeyCode.slash: return "/"
-        default: return "?"
-        }
+    /// The label for `keyCode` alone, with no modifiers. Delegates to
+    /// `KeyName` so the actual naming logic lives in one place.
+    public var keyName: String {
+        KeyName.of(keyCode)
     }
 }
