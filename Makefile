@@ -1,7 +1,11 @@
-.PHONY: test build dev run clean
+.PHONY: test lint build dev run clean
 
-test:
+test: lint
 	swift test
+
+# Catches assertions that cannot fail. See the script for the toolchain bug.
+lint:
+	./Scripts/lint-tests.sh
 
 build:
 	./Scripts/build-app.sh

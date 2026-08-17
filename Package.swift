@@ -22,12 +22,14 @@ let package = Package(
         .target(name: "Geometry"),
         .target(name: "WindowKit", dependencies: ["Geometry"]),
         .target(name: "Hotkeys"),
+        .target(name: "SpaceKit", dependencies: ["Geometry"]),
         .target(name: "Core", dependencies: ["Geometry", "WindowKit", "Hotkeys"]),
         .target(name: "Config", dependencies: ["Geometry"]),
         .executableTarget(name: "App", dependencies: ["Geometry", "WindowKit", "Hotkeys", "Core", "Config"]),
         .testTarget(name: "GeometryTests", dependencies: ["Geometry", testing]),
         .testTarget(name: "WindowKitTests", dependencies: ["WindowKit", "Geometry", testing]),
         .testTarget(name: "HotkeysTests", dependencies: ["Hotkeys", testing]),
+        .testTarget(name: "SpaceKitTests", dependencies: ["SpaceKit", "Geometry", testing]),
         // Config is a test-only dependency here: the SizeUp-import round-trip test
         // (Task 6, M4) needs both KeymapResolver (Core) and SizeUpImporter (Config)
         // in the same target, since the plist that seeded DefaultKeymap's literals

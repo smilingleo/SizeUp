@@ -152,6 +152,18 @@ suspend/resume pairing are not, in line with the rest of `App`. The suspend/resu
 is only verifiable by hand, and its failure mode — every shortcut silently released — is nasty. It is on
 the M4 manual checklist.
 
+## Toolchain hazards
+
+**`#expect` silently passes for any Bool compared with `==` or `!=` on this toolchain.**
+Swift Testing 0.99.0, the SPM package that `Package.swift` is pinned to because this machine has no
+Xcode. Measured: `#expect(true == false)`, `#expect(false == true)`, `#expect(someTrueValue == false)`
+and `#expect(someTrueValue != true)` **all pass**, while `#expect(x == 2)` on an `Int` fails correctly
+and so does `#expect(Bool(false))`. So the defect is specific to Bool-against-Bool comparison — exactly
+the shape a negative assertion falls into naturally. Found by a subagent whose own test could not fail,
+and which then exposed a real defect in its implementation once the assertion was written as `#expect(!x)`.
+This cannot be caught by a test, since a guard written in the broken shape would pass either way, so it
+is enforced by `Scripts/lint-tests.sh`, wired into `make test`.
+
 ## Before open-sourcing
 
 **The `swift-testing` package dependency will break CI on runners that have Xcode.**
