@@ -183,6 +183,15 @@ flag before publishing.
 
 ## The untested surface, stated honestly
 
+**`coreOverrides(from:)` in `Sources/App/ShortcutsView.swift` is the whole of M4 and has no test.**
+It translates stored settings into `Core`'s input type, and both the status menu and the Shortcuts tab
+depend on it. Measured: replacing its body with `return []` — which would ignore every shortcut the user
+has ever set — leaves all 197 tests passing. It was consolidated from three copies to one, which reduces
+the number of places that can rot but does not make any of them tested; the round-trip test in
+`CoreTests` still exercises its own private copy of the same translation, not this one. Untestable where
+it sits, because `App` is an executable target. Moving the translation into `Config` (returning
+`Config`-side tuples) would fix it properly.
+
 M1 ships 79 passing tests, weighted toward the pure logic most likely to be subtly wrong (exact
 tiling, odd pixel counts, negative-origin displays, cycle-reset semantics, LRU eviction). But the
 untested surface is also the surface most likely to break:

@@ -233,3 +233,84 @@ extension Action {
     #expect(spaceEntry.keyCode == nil)
     #expect(next.filter { $0.keyCode == contested.keyCode }.count == 1)
 }
+
+/// The other half of the same defect. `resolve` unbinds the loser of a conflict,
+/// so an action that HAS a default but lost one appears unbound in
+/// `current.bindings` while its raw entry still claims the key. Restricting the
+/// scan to actions with no default missed this: recording that key elsewhere left
+/// the raw claim in place, and after the next resolve the key belonged to the
+/// action the tab had been showing as unbound — so the recording appeared to do
+/// nothing, and the message named the wrong victim.
+@Test func assigningDisplacesARawClaimHeldByAnActionThatAlreadyLostAConflict() throws {
+    let contested = Shortcut(keyCode: 77, modifierFlags: 1_835_008)
+    let file = [
+        ShortcutOverride(
+            action: .half(.left),
+            keyCode: contested.keyCode,
+            modifierFlags: contested.modifierFlags
+        ),
+        ShortcutOverride(
+            action: .half(.right),
+            keyCode: contested.keyCode,
+            modifierFlags: contested.modifierFlags
+        ),
+    ]
+    // Precondition: one of them is already unbound, so it is invisible to a scan
+    // of resolved bindings.
+    let before = KeymapResolver.resolve(overrides: file).bindings
+    #expect(before.filter { $0.shortcut == contested }.count == 1)
+
+    let (next, displaced) = KeymapResolver.assigning(contested, to: .center, in: file)
+
+    #expect(displaced.contains(.half(.left)))
+    #expect(displaced.contains(.half(.right)))
+    // And the recording actually takes effect, which is the point.
+    let after = KeymapResolver.resolve(overrides: next).bindings
+    let holder = try #require(after.first { $0.shortcut == contested })
+    #expect(holder.action == .center)
+}
+
+/// `resolve` honours the last entry for an action, so an earlier superseded entry
+/// is not a claim on anything. Treating it as one unbound a binding that never
+/// conflicted with the shortcut being recorded.
+@Test func assigningIgnoresASupersededOverrideThatOnlyLooksLikeAClaim() throws {
+    let contested = Shortcut(keyCode: 78, modifierFlags: 1_835_008)
+    let elsewhere = Shortcut(keyCode: 79, modifierFlags: 1_835_008)
+    let file = [
+        ShortcutOverride(
+            action: .space(.next),
+            keyCode: contested.keyCode,
+            modifierFlags: contested.modifierFlags
+        ),
+        ShortcutOverride(
+            action: .space(.next),
+            keyCode: elsewhere.keyCode,
+            modifierFlags: elsewhere.modifierFlags
+        ),
+    ]
+
+    let (next, displaced) = KeymapResolver.assigning(contested, to: .center, in: file)
+
+    #expect(displaced.isEmpty)
+    let surviving = try #require(next.last { $0.action == .space(.next) })
+    #expect(surviving.keyCode == elsewhere.keyCode)
+}
+
+/// Two entries for one defaultless action both matched the raw scan, so the
+/// action was named twice in the sentence shown to the user.
+@Test func aDisplacedActionIsNamedOnlyOnceHoweverManyEntriesClaimTheKey() {
+    let contested = Shortcut(keyCode: 80, modifierFlags: 1_835_008)
+    let duplicated = Array(
+        repeating: ShortcutOverride(
+            action: .space(.next),
+            keyCode: contested.keyCode,
+            modifierFlags: contested.modifierFlags
+        ),
+        count: 3
+    )
+
+    let (next, displaced) = KeymapResolver.assigning(contested, to: .center, in: duplicated)
+
+    #expect(displaced == [.space(.next)])
+    #expect(next.filter { $0.action == .space(.next) }.count == 1)
+}

@@ -123,19 +123,29 @@ public enum KeymapResolver {
         var displaced = current.bindings.compactMap {
             $0.shortcut == shortcut && $0.action != action ? $0.action : nil
         }
-        // Also the overrides `resolve` cannot see. `resolve` merges into
-        // `DefaultKeymap`, so an override for an action that has no default —
-        // the four `space.*` bindings a SizeUp import creates, before Spaces
-        // exists — is absent from `current.bindings` and could not be displaced.
-        // Left in the file it becomes a hidden second claim on this key, which
-        // stays inert only until `space` gains a default and one of them is
-        // unbound silently: exactly the "presses a key that will never work
-        // again" outcome the import alert was written to prevent.
-        let known = current.bindings.map(\.action)
-        for override in overrides
-        where !known.contains(override.action) && override.action != action {
-            guard let keyCode = override.keyCode else { continue }
-            guard Shortcut(keyCode: keyCode, modifierFlags: override.modifierFlags) == shortcut
+        // Then every action the overrides file mentions, whether or not `resolve`
+        // could see it. `resolve` merges into `DefaultKeymap` and unbinds losers,
+        // so a raw entry can hold a claim on this key that is invisible in
+        // `current.bindings` — an action with no default at all (the four
+        // `space.*` entries a SizeUp import writes), and equally an action that
+        // has one but already lost a conflict. Left in the file, that claim is
+        // inert only until something changes and it silently wins, which is the
+        // "presses a key that will never work again" outcome the import's own
+        // alert was written to prevent.
+        //
+        // Last-write-wins, matching `resolve`: only an action's final entry is in
+        // effect, so an earlier superseded entry must not be treated as a claim —
+        // unbinding on its account would destroy a binding that never conflicted.
+        var considered: [Action] = []
+        for override in overrides where override.action != action {
+            guard !considered.contains(override.action) else { continue }
+            considered.append(override.action)
+            guard let effective = overrides.last(where: { $0.action == override.action }),
+                  let keyCode = effective.keyCode,
+                  Shortcut(
+                      keyCode: keyCode,
+                      modifierFlags: effective.modifierFlags
+                  ) == shortcut
             else { continue }
             displaced.append(override.action)
         }

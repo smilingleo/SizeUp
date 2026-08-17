@@ -103,22 +103,34 @@ final class ShortcutsViewModel {
         conflictMessage = Self.describe(resolution.conflicts)
     }
 
-    /// Reports what a hand-edited file asked for, in a stable order — the
-    /// underlying dictionary has none, and a message that reshuffles itself
-    /// between launches reads like a different problem each time.
+    /// Reports what a hand-edited file asked for, naming the winner explicitly.
+    ///
+    /// `conflicts` carries each group in `DefaultKeymap` order, which is the order
+    /// `unbindLosers` keeps, so the first name is the action still in effect.
+    /// Sorting the names inside a group therefore cannot be done: an earlier
+    /// version said "only the first of each is in effect" over an alphabetised
+    /// list, so for `half.left` against `fullScreen` it named Full Screen as the
+    /// survivor when Left Half was. The groups themselves are sorted, because the
+    /// underlying dictionary has no order and a message that reshuffles between
+    /// launches reads like a different problem each time.
     private static func describe(_ conflicts: [Shortcut: [Action]]) -> String? {
         guard !conflicts.isEmpty else { return nil }
         let described = conflicts
-            .map { shortcut, actions in
-                let names = actions.map { DefaultKeymap.title(for: $0) }.sorted()
-                return "\(shortcut.displayString) (\(names.joined(separator: " and ")))"
+            .compactMap { shortcut, actions -> String? in
+                guard let winner = actions.first else { return nil }
+                let losers = actions.dropFirst().map { DefaultKeymap.title(for: $0) }
+                guard !losers.isEmpty else { return nil }
+                return "\(shortcut.displayString) is set for "
+                    + "\(DefaultKeymap.title(for: winner)) and "
+                    + "\(losers.joined(separator: " and "))"
             }
             .sorted()
+        guard !described.isEmpty else { return nil }
         let lead = described.count == 1
             ? "Your settings file gives one shortcut to more than one action: "
             : "Your settings file gives \(described.count) shortcuts to more than one action: "
         return lead + described.joined(separator: "; ")
-            + ". Only the first of each is in effect; the others have been unbound."
+            + ". Only the first named in each is in effect; the rest have been unbound."
     }
 
     /// Starts recording for `action`. Suspends the global hotkeys for the
