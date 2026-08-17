@@ -9,6 +9,8 @@ import Hotkeys
 @Test func matchesTheUsersSizeUpConfiguration() {
     let ctrlOptCmd: UInt = 1_835_008
     let ctrlOptShift: UInt = 917_504
+    // From the author's live SizeUp plist: ComboFlags 1310720, Carbon 4352.
+    let ctrlCmd: UInt = 1_310_720
 
     let expected: [(Shortcut, Action)] = [
         (Shortcut(keyCode: KeyCode.leftArrow, modifierFlags: ctrlOptCmd), .half(.left)),
@@ -27,6 +29,9 @@ import Hotkeys
         // above, minus the command modifier.
         (Shortcut(keyCode: KeyCode.rightArrow, modifierFlags: 786_432), .display(.next)),
         (Shortcut(keyCode: KeyCode.leftArrow, modifierFlags: 786_432), .display(.previous)),
+        // Next/Previous Space.
+        (Shortcut(keyCode: KeyCode.rightArrow, modifierFlags: ctrlCmd), .space(.next)),
+        (Shortcut(keyCode: KeyCode.leftArrow, modifierFlags: ctrlCmd), .space(.previous)),
     ]
 
     #expect(DefaultKeymap.bindings.count == expected.count)

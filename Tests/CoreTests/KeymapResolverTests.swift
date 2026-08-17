@@ -111,13 +111,14 @@ import Hotkeys
 }
 
 @Test func anOverrideForAnActionDefaultKeymapDoesNotBindIsIgnoredRatherThanAppended() {
-    // .space actions have no default binding yet (they arrive in M5).
-    let overrides = [ShortcutOverride(action: .space(.next), keyCode: 5, modifierFlags: 6)]
+    // `.space(.above)`/`.space(.below)` have no default binding: macOS has no
+    // vertical neighbour for either to reach (see `SpaceSequence`'s doc).
+    let overrides = [ShortcutOverride(action: .space(.above), keyCode: 5, modifierFlags: 6)]
 
     let resolved = KeymapResolver.resolve(overrides: overrides).bindings
 
     #expect(resolved.count == DefaultKeymap.bindings.count)
-    #expect(!resolved.contains { $0.action == .space(.next) })
+    #expect(!resolved.contains { $0.action == .space(.above) })
     for (binding, (defaultShortcut, action)) in zip(resolved, DefaultKeymap.bindings) {
         #expect(binding.action == action)
         #expect(binding.shortcut == defaultShortcut)
@@ -210,26 +211,29 @@ extension Action {
 /// into `DefaultKeymap` — so an override for an action with no default entry was
 /// invisible to it and could not be displaced.
 ///
-/// A SizeUp import creates exactly four such overrides, for `space.*`. Left in
-/// the file, one of them is a hidden second claim on the key, inert only until
-/// Spaces ships a default and `unbindLosers` kills one of them without saying
-/// so. That is precisely the "presses a key that will never work again" outcome
-/// the import's own alert was written to prevent.
+/// A SizeUp import creates such overrides for `space.above`/`space.below`,
+/// which have no default binding because macOS has no vertical neighbour for
+/// either to reach. Left in the file, one of them is a hidden second claim on
+/// the key, inert only until something else binds it and `unbindLosers` kills
+/// one of them without saying so. That is precisely the "presses a key that
+/// will never work again" outcome the import's own alert was written to
+/// prevent.
 @Test func assigningDisplacesAnOverrideForAnActionThatHasNoDefaultBinding() throws {
-    let contested = Shortcut(keyCode: KeyCode.rightArrow, modifierFlags: 1_310_720)
+    // F13 with all three real modifiers: nothing in DefaultKeymap uses it.
+    let contested = Shortcut(keyCode: 105, modifierFlags: 1_835_008)
     let imported = [
         ShortcutOverride(
-            action: .space(.next),
+            action: .space(.above),
             keyCode: contested.keyCode,
             modifierFlags: contested.modifierFlags
         )
     ]
-    #expect(!KeymapResolver.resolve(overrides: imported).bindings.contains { $0.action == .space(.next) })
+    #expect(!KeymapResolver.resolve(overrides: imported).bindings.contains { $0.action == .space(.above) })
 
     let (next, displaced) = KeymapResolver.assigning(contested, to: .center, in: imported)
 
-    #expect(displaced == [.space(.next)])
-    let spaceEntry = try #require(next.first { $0.action == .space(.next) })
+    #expect(displaced == [.space(.above)])
+    let spaceEntry = try #require(next.first { $0.action == .space(.above) })
     #expect(spaceEntry.keyCode == nil)
     #expect(next.filter { $0.keyCode == contested.keyCode }.count == 1)
 }
@@ -302,7 +306,7 @@ extension Action {
     let contested = Shortcut(keyCode: 80, modifierFlags: 1_835_008)
     let duplicated = Array(
         repeating: ShortcutOverride(
-            action: .space(.next),
+            action: .space(.above),
             keyCode: contested.keyCode,
             modifierFlags: contested.modifierFlags
         ),
@@ -311,6 +315,6 @@ extension Action {
 
     let (next, displaced) = KeymapResolver.assigning(contested, to: .center, in: duplicated)
 
-    #expect(displaced == [.space(.next)])
-    #expect(next.filter { $0.action == .space(.next) }.count == 1)
+    #expect(displaced == [.space(.above)])
+    #expect(next.filter { $0.action == .space(.above) }.count == 1)
 }

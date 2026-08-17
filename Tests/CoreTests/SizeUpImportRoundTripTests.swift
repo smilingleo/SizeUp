@@ -41,30 +41,20 @@ struct SizeUpImportRoundTripTests {
         }
     }
 
-    @Test func importingTheRealSizeUpFileReproducesDefaultKeymapForEveryNonSpacesAction() throws {
+    @Test func importingTheRealSizeUpFileReproducesDefaultKeymapForEveryBoundAction() throws {
         let imported = SizeUpImporter.read(at: fixtureURL)
-        #expect(imported.skipped.isEmpty)
+        // Space Above/Space Below are skipped: macOS has had a single
+        // horizontal strip of Spaces per display since Lion, so neither has
+        // a real neighbour to move to.
+        #expect(imported.skipped == ["Space Above", "Space Below"])
 
         let resolved = KeymapResolver.resolve(overrides: overrides(from: imported.overrides)).bindings
 
-        let nonSpacesActions = DefaultKeymap.bindings.filter {
-            if case .space = $0.1 { return false }
-            return true
-        }
-        #expect(nonSpacesActions.count == 13)
+        #expect(DefaultKeymap.bindings.count == 15)
 
-        for (defaultShortcut, action) in nonSpacesActions {
+        for (defaultShortcut, action) in DefaultKeymap.bindings {
             let binding = try #require(resolved.first { $0.action == action })
             #expect(binding.shortcut == defaultShortcut)
         }
-    }
-
-    @Test func theFourSpacesKeysImportToTheirSpaceIdentifiersEvenThoughTheyAreInertUntilM5() {
-        let imported = SizeUpImporter.read(at: fixtureURL)
-        let spaceActions = Set(imported.overrides.map(\.action)).intersection([
-            "space.next", "space.previous", "space.above", "space.below",
-        ])
-
-        #expect(spaceActions == ["space.next", "space.previous", "space.above", "space.below"])
     }
 }

@@ -1,7 +1,12 @@
-.PHONY: test build dev run clean
+.PHONY: test lint build dev run clean
 
-test:
+test: lint
 	swift test
+
+# Two invariants that reviews used to check by hand. See each script for why.
+lint:
+	./Scripts/lint-tests.py
+	./Scripts/lint-layering.py
 
 build:
 	./Scripts/build-app.sh

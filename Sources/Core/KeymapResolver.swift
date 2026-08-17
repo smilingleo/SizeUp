@@ -126,8 +126,8 @@ public enum KeymapResolver {
         // Then every action the overrides file mentions, whether or not `resolve`
         // could see it. `resolve` merges into `DefaultKeymap` and unbinds losers,
         // so a raw entry can hold a claim on this key that is invisible in
-        // `current.bindings` — an action with no default at all (the four
-        // `space.*` entries a SizeUp import writes), and equally an action that
+        // `current.bindings` — an action with no default at all (`space.above`
+        // and `space.below`, unbindable by design), and equally an action that
         // has one but already lost a conflict. Left in the file, that claim is
         // inert only until something changes and it silently wins, which is the
         // "presses a key that will never work again" outcome the import's own

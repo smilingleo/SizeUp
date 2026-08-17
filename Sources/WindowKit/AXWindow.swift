@@ -2,6 +2,7 @@ import ApplicationServices
 import CoreGraphics
 import Foundation
 import Geometry
+import SpaceKit
 
 /// A window addressed through the Accessibility API.
 public final class AXWindow: WindowHandle {
@@ -19,6 +20,16 @@ public final class AXWindow: WindowHandle {
 
     public var key: WindowKey {
         WindowKey(pid: pid, elementHash: Int(bitPattern: CFHash(element)))
+    }
+
+    /// Resolved on demand rather than cached at construction.
+    ///
+    /// A `CGWindowID` belongs to a window that can close while this handle is
+    /// alive, and a stale ID names either nothing or, worse, a window that has
+    /// since reused the number. Nothing here is hot enough for the lookup to
+    /// matter.
+    public var windowID: UInt32? {
+        WindowIdentifier.windowID(of: element)
     }
 
     public func frame() -> CGRect? {

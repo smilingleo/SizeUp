@@ -7,6 +7,11 @@ import Geometry
 final class FakeWindow: WindowHandle {
     let key = WindowKey(pid: 42, elementHash: 1)
     var bundleIdentifier: String? = "com.example.fake"
+    /// A required member rather than a defaulted one, deliberately: a handle
+    /// that silently answered `nil` here would disable Spaces for that window
+    /// type with nothing to notice. Removing the default extension is what
+    /// surfaced this fake.
+    var windowID: UInt32? = 4242
     var stored: CGRect
     var minSize: CGSize
     var setFrameCallCount = 0

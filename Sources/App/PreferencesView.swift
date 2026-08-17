@@ -87,6 +87,8 @@ final class PreferencesViewModel {
         onChange()
     }
 
+    private(set) var followsWindowToSpace = true
+
     private func adopt(_ settings: Config.Settings) {
         // `resolved`, never the raw file values. Two reasons, both load-bearing:
         //
@@ -102,6 +104,7 @@ final class PreferencesViewModel {
         // with the clamped gap, so a stepper reading 5000 would describe
         // something that is not happening, and the next unrelated edit would
         // persist 5000 again.
+        followsWindowToSpace = settings.followsWindowToSpace
         let usable = settings.gaps.resolved
         innerGap = usable.inner
         outerGap = usable.outer
@@ -172,6 +175,17 @@ final class PreferencesViewModel {
         save()
     }
 
+    /// An explicit intent method rather than a `didSet`, matching the rest of
+    /// this view model. A `didSet` would also fire from `adopt`, so merely
+    /// opening the window would write the settings file back — harmless in
+    /// value, but a spurious save that can fail and report an error the user did
+    /// nothing to cause.
+    func setFollowsWindowToSpace(_ follows: Bool) {
+        guard follows != followsWindowToSpace else { return }
+        followsWindowToSpace = follows
+        save()
+    }
+
     func commitGaps(inner: Double, outer: Double) {
         innerGap = inner
         outerGap = outer
@@ -199,6 +213,7 @@ final class PreferencesViewModel {
                 $0.gaps = GapSettings(inner: innerGap, outer: outerGap)
                 $0.cycle = cycle
                 $0.skippedBundleIdentifiers = skippedBundleIdentifiers
+                $0.followsWindowToSpace = followsWindowToSpace
             }
             errorMessage = nil
             // Only rebuild the router when something was actually
@@ -253,6 +268,7 @@ struct PreferencesView: View {
     var body: some View {
         Form {
             gapsSection
+            spacesSection
             cyclingSection
             skipListSection
             if let errorMessage = viewModel.errorMessage {
@@ -268,6 +284,26 @@ struct PreferencesView: View {
         // intrinsic height and the window collapses to its title bar. Observed
         // as a 460x32 window.
         .frame(minWidth: 460, minHeight: 520)
+    }
+
+    private var spacesSection: some View {
+        Section("Spaces") {
+            Toggle(
+                "Follow the window to its new Space",
+                isOn: Binding(
+                    get: { viewModel.followsWindowToSpace },
+                    set: { viewModel.setFollowsWindowToSpace($0) }
+                )
+            )
+            Text(
+                viewModel.followsWindowToSpace
+                    ? "Moving a window to another Space switches to that Space, which is what SizeUp does."
+                    : "The window moves but the screen stays put, so it will look as though the "
+                        + "window has closed. Switch Spaces yourself to find it."
+            )
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        }
     }
 
     private var gapsSection: some View {

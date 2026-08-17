@@ -12,6 +12,10 @@ public enum DefaultKeymap {
     private static let ctrlOptCmd: UInt = 1_835_008
     private static let ctrlOptShift: UInt = 917_504
     private static let ctrlOpt: UInt = 786_432
+    /// From the author's live SizeUp plist: `ComboFlags` 1310720, which is
+    /// Carbon 4352 (`controlKey` 0x1000 | `cmdKey` 0x100) once translated —
+    /// control and command, no option.
+    private static let ctrlCmd: UInt = 1_310_720
 
     public static let bindings: [(Shortcut, Action)] = [
         (Shortcut(keyCode: KeyCode.leftArrow, modifierFlags: ctrlOptCmd), .half(.left)),
@@ -31,6 +35,11 @@ public enum DefaultKeymap {
         // dropped command bit here would silently steal the halves shortcuts.
         (Shortcut(keyCode: KeyCode.rightArrow, modifierFlags: ctrlOpt), .display(.next)),
         (Shortcut(keyCode: KeyCode.leftArrow, modifierFlags: ctrlOpt), .display(.previous)),
+        // Next/Previous Space. Same arrows again, distinguished from both the
+        // halves and the display moves by the modifier combination — control
+        // and command, no option.
+        (Shortcut(keyCode: KeyCode.rightArrow, modifierFlags: ctrlCmd), .space(.next)),
+        (Shortcut(keyCode: KeyCode.leftArrow, modifierFlags: ctrlCmd), .space(.previous)),
     ]
 
     /// Menu label for an action.
