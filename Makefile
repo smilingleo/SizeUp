@@ -3,9 +3,10 @@
 test: lint
 	swift test
 
-# Catches assertions that cannot fail. See the script for the toolchain bug.
+# Two invariants that reviews used to check by hand. See each script for why.
 lint:
-	./Scripts/lint-tests.sh
+	./Scripts/lint-tests.py
+	./Scripts/lint-layering.py
 
 build:
 	./Scripts/build-app.sh

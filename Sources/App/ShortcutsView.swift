@@ -294,7 +294,7 @@ struct ShortcutsView: View {
     // this one to fare better.
     var body: some View {
         Form {
-            // Above the rows, not after them. Appended below thirteen rows it
+            // Above the rows, not after them. Appended below the rows it
             // sat outside the window and had to be scrolled to, which defeats
             // its entire purpose: the user sees a shortcut disappear from an
             // action they did not touch, and the sentence explaining why is the

@@ -143,10 +143,21 @@ default switch to that Space so you can see where the window went. Turn that off
 Moving a window between Spaces does not count as a placement: Snap Back still restores the frame from
 before you tiled it, and the size cycle does not advance.
 
+Full-screen applications are skipped. macOS puts a full-screen app's own Space **in the strip** between
+your Spaces, so without this "next Space" would move your window inside another app's full-screen window,
+where you cannot see it. Only ordinary Spaces are targets, and a window that is itself inside a
+full-screen Space is left alone.
+
 **This uses private system interfaces.** There is no public API for moving a window between Spaces, and
-every window manager that does it calls the same undocumented SkyLight functions. They are confined to
-one target (`Sources/SpaceKit/`), every symbol is resolved optionally, and if a future macOS removes them
-the two Spaces shortcuts stop working and say so in the menu while everything else carries on.
+every window manager that does it calls the same undocumented SkyLight functions. What that means for you:
+
+- **Any macOS update can break it**, with no warning and no deprecation cycle.
+- **The blast radius is these two shortcuts.** All the private API lives in one target
+  (`Sources/SpaceKit/`) and every symbol is resolved optionally. If one disappears, the Spaces shortcuts
+  stop working, the menu says "(unavailable on this macOS)" beside them, and the other thirteen actions
+  are unaffected.
+- It was verified on macOS 26.5.1 only. Nothing else has been tested.
+- No SIP change is needed, and no permission beyond the Accessibility grant every action already requires.
 
 SizeUp also binds **Space Above** and **Space Below**. Those cannot be reproduced, because macOS has
 arranged Spaces in a single horizontal strip per display since Lion — there is no Space above anything.
@@ -160,7 +171,33 @@ app as a login item at any location. Add Sizeup2 under System Settings → Gener
 ## Development
 
 ```
-swift test    # run the test suite
+make test     # run the test suite AND both lints — use this, not bare `swift test`
 make build    # produce build/Sizeup2.app
 make clean    # remove build artifacts
 ```
+
+Requires Swift 6 and macOS 14 or later. That floor is what the package declares; the app has only ever
+been *run* on macOS 26.5.1, and every private symbol it uses was verified on exactly that version.
+
+### Read this before writing a test
+
+**Never write `#expect(x == false)`, `#expect(x != true)`, or any `==`/`!=` between Bools inside
+`#expect`.** On the Swift Testing version this package pins, those expand incorrectly and **pass
+regardless of the value** — `#expect(true == false)` passes. Write `#expect(x)` and `#expect(!x)`.
+Comparisons of non-Bool values are fine; `#expect(1 == 2)` fails correctly.
+
+This cannot be guarded by a test, because a guard written in the broken shape would pass either way, so
+`Scripts/lint-tests.py` catches it and `make test` runs it. It cannot catch `#expect(boolA == boolB)`,
+where neither side is a literal — that needs type information. Hence the blunt rule above.
+
+`Scripts/lint-layering.py` enforces the target graph: `Geometry` sees only CoreGraphics, `Core` imports
+neither Foundation nor `Config`, and all private API stays in `SpaceKit` so that a macOS change has one
+directory to break. Each rule's reason is documented in that script.
+
+### The test dependency is a known hazard
+
+`Package.swift` depends on the `swift-testing` package. That is necessary on a machine with Command Line
+Tools and no Xcode, where the toolchain does not bundle the testing library. On a machine that **does**
+have Xcode, the same dependency collides with the bundled copy and tests fail to build with `missing
+required module '_TestingInternals'`. There is no configuration that works in both places, so CI needs to
+pick one and say which.

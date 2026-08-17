@@ -15,8 +15,15 @@ struct SkyLight: Sendable {
     // SLSMainConnectionID() -> Int32
     // Resolved and called successfully in
     // .superpowers/sdd/2026-08-14-sizeup2-m4/probe.swift, move.swift and
-    // follow.swift. `CGS`-prefixed names are the older alias for the same
-    // symbol and are tried second everywhere below.
+    // follow.swift.
+    //
+    // `CGS`-prefixed names are the older spelling and are tried second
+    // everywhere below. That they are the SAME function, and not merely a
+    // similarly named one with a possibly different signature, was measured
+    // rather than assumed: `dlsym` returns an identical address for all five
+    // pairs on this machine, so the fallback path cannot be called with the
+    // wrong signature even though no test exercises it. `SLSManagedDisplay-
+    // SetCurrentSpace` was missing its alias until that check found it.
     typealias ConnectionIDFn = @convention(c) () -> Int32
 
     // SLSCopyManagedDisplaySpaces(connection) -> CFArray?
@@ -91,7 +98,7 @@ struct SkyLight: Sendable {
         copySpacesForWindows = resolve(["SLSCopySpacesForWindows", "CGSCopySpacesForWindows"]).map {
             unsafeBitCast($0, to: CopySpacesForWindowsFn.self)
         }
-        managedDisplaySetCurrentSpace = resolve(["SLSManagedDisplaySetCurrentSpace"]).map {
+        managedDisplaySetCurrentSpace = resolve(["SLSManagedDisplaySetCurrentSpace", "CGSManagedDisplaySetCurrentSpace"]).map {
             unsafeBitCast($0, to: ManagedDisplaySetCurrentSpaceFn.self)
         }
     }

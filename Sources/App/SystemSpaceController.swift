@@ -13,31 +13,15 @@ struct SystemSpaceController: SpaceControlling {
 
     var isAvailable: Bool { service.isAvailable }
 
-    /// Finds the display whose Space list contains the window.
-    ///
-    /// Deliberately keyed on the window's *actual* Space rather than on which
-    /// display its frame overlaps. A window can sit on a Space that is not the
-    /// one currently shown on that display, and moving it relative to the
-    /// visible Space instead of its own would send it somewhere the user did
-    /// not ask for.
-    ///
-    /// `current` is the window's own Space, not the display's active one, so a
-    /// repeated "next Space" walks the strip rather than bouncing off whatever
-    /// happens to be on screen.
+    /// Both halves are `SpaceKit`'s: the query, and the pure rule for choosing a
+    /// display, which is tested there rather than sitting untested here.
     func layout(containing windowID: UInt32)
         -> (spaces: [SpaceIdentifier], current: SpaceIdentifier, display: String)?
     {
-        let occupied = service.spaces(of: windowID)
-        guard !occupied.isEmpty else { return nil }
-
-        for layout in service.displaySpaces() {
-            // A window assigned to every Space (`Assign To: All Desktops`)
-            // reports many; the first that this display actually owns is the
-            // one to move relative to.
-            guard let here = occupied.first(where: { layout.spaces.contains($0) }) else { continue }
-            return (layout.spaces, here, layout.displayIdentifier)
-        }
-        return nil
+        SpaceService.locate(
+            windowOn: service.spaces(of: windowID),
+            in: service.displaySpaces()
+        )
     }
 
     func move(windowID: UInt32, to space: SpaceIdentifier) -> Bool {

@@ -250,7 +250,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if binding.shortcut == nil { item.title += "  (no shortcut)" }
             // When the handler failed to install, every shortcut carries that
             // same reason and the banner above already says so once. Repeating
-            // it on all 13 items buries the banner.
+            // it on every item buries the banner.
             if !hotkeys.handlerInstallFailed, let shortcut = binding.shortcut,
                 let failure = hotkeys.failure(for: shortcut) {
                 // Name the reason. "unavailable" gave the user no way to tell a
@@ -394,11 +394,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 // user ends up pressing a key that will never work again.
                 detail += " Skipped \(result.skipped.count): "
                     + result.skipped.sorted().joined(separator: ", ") + "."
-            }
-            // Spaces bindings import but cannot fire yet. Saying so here is the
-            // difference between a known limitation and an apparent bug.
-            if result.overrides.contains(where: { $0.action.hasPrefix("space.") }) {
-                detail += " SizeUp's Spaces shortcuts were imported but do nothing yet."
             }
             outcome.informativeText = detail
         } catch {

@@ -61,22 +61,36 @@ shortcuts have not done anything in your SizeUp for over a decade.**
       you did not ask for is worse than not having the key.
 - [ ] After importing, ⌃⌘↑ and ⌃⌘↓ do nothing. They are free for you to use for something else.
 
-## 6. Robustness
+## 6. Full-screen apps
+
+The one that a review caught and the plan had missed. macOS puts a full-screen application's Space **in
+the strip** between the user's Spaces — measured on this machine, making TextEdit full-screen turned the
+strip `[1, 3]` into `[1, 398, 3]`.
+
+- [ ] Put an app into full-screen (green button or ⌃⌘F). Focus a window on Space 1 and press **⌃⌘→**.
+      The window must go to your *next ordinary Space*, **not** into the full-screen app. If it vanishes
+      behind the full-screen window, this regressed.
+- [ ] Focus the full-screen app itself and press ⌃⌘→. Nothing happens — a window inside a full-screen
+      Space is left alone.
+
+## 7. Robustness
 
 - [ ] Hand-edit `~/Library/Application Support/Sizeup2/settings.json` to
       `{"followsWindowToSpace": "yes please"}` and relaunch. The app starts and follows by default.
 - [ ] Move a window to another Space, then close it, then press ⌃⌘→ with nothing focused. Nothing happens.
 
-## 7. Known and deliberate
+## 8. Known and deliberate
 
 - **Spaces use private system interfaces.** There is no public API for this; every window manager that
   does it uses the same SkyLight functions. If a future macOS removes them, the two Spaces shortcuts stop
   working, the menu says **"(unavailable on this macOS)"** next to them, and the other thirteen actions
   are unaffected. That degradation is the reason the private API is confined to one target.
+- **A failing move can take about 50ms** of main-thread time, because the move is confirmed by polling the
+  window server rather than trusted. A successful move is confirmed on the first read.
 - **Above/Below cannot be implemented.** See section 5.
 - **Open at Login is still greyed out.** Ad-hoc signing, unrelated.
 
-## 8. When this passes
+## 9. When this passes
 
 SizeUp can be uninstalled. It was kept installed through M1–M4 only for its four Spaces shortcuts, two of
 which turned out not to work at all.

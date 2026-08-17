@@ -6,6 +6,13 @@ import Geometry
 ///
 /// `spaces` is already in strip order (left to right), which is what
 /// `neighbouringSpace` (Geometry) expects — no reordering happens here.
+/// A display's ordinary Spaces, in strip order, and which one it is showing.
+///
+/// `spaces` excludes full-screen applications' Spaces, so `current` is not
+/// necessarily among them: when the display is showing a full-screen app, no
+/// neighbour can be computed and the Spaces shortcuts correctly do nothing
+/// rather than moving a window out of a full-screen Space to somewhere the user
+/// cannot see it happen.
 public struct SpaceLayout: Equatable, Sendable {
     public let displayIdentifier: String
     public let spaces: [SpaceIdentifier]
@@ -65,7 +72,16 @@ public final class SpaceService: Sendable {
         displays.compactMap { display in
             guard let identifier = display["Display Identifier"] as? String else { return nil }
             let spaceDictionaries = display["Spaces"] as? [[String: Any]] ?? []
-            let spaces = spaceDictionaries.compactMap(managedSpaceID)
+            // Only ordinary user Spaces are targets. A full-screen application
+            // occupies its own Space of `type` 4, and macOS puts it IN THE STRIP
+            // between the user's Spaces — measured on this machine, making
+            // TextEdit full-screen turned [1, 3] into [1, 398(type 4), 3]. So
+            // "next Space" would have moved the window INTO the full-screen app's
+            // Space and, by default, followed it there: the window becomes
+            // invisible behind another app's full-screen window, which is the
+            // worst outcome this feature has, and it happens on any Mac with a
+            // full-screen app open.
+            let spaces = spaceDictionaries.filter(isUserSpace).compactMap(managedSpaceID)
             guard let currentDictionary = display["Current Space"] as? [String: Any],
                   let current = managedSpaceID(currentDictionary)
             else { return nil }
@@ -73,9 +89,62 @@ public final class SpaceService: Sendable {
         }
     }
 
+    /// `type` 0 is an ordinary Space. 4 is a full-screen application's own
+    /// Space; other values exist for other system-managed Spaces. Anything that
+    /// is not plainly 0 is excluded, rather than excluding a known list of bad
+    /// values — a `type` this code has never seen is far more likely to be
+    /// another system-managed Space than a new kind of user one, and the cost of
+    /// wrongly excluding is a shortcut that does nothing, against wrongly
+    /// including which hides the user's window inside another app.
+    private static func isUserSpace(_ dictionary: [String: Any]) -> Bool {
+        (dictionary["type"] as? Int) == 0
+    }
+
     private static func managedSpaceID(_ dictionary: [String: Any]) -> SpaceIdentifier? {
         guard let raw = dictionary["ManagedSpaceID"] as? Int else { return nil }
-        return SpaceIdentifier(UInt64(raw))
+        return spaceIdentifier(raw)
+    }
+
+    /// `UInt64(_:)` traps on a negative value, and this parses data from a
+    /// private API on a future OS. Two launch-killing traps have already shipped
+    /// in this project from exactly this shape of conversion, in a file whose
+    /// comment promised the input was validated — measured here too:
+    /// `UInt64(-5)` aborts.
+    private static func spaceIdentifier(_ raw: Int) -> SpaceIdentifier? {
+        guard let value = UInt64(exactly: raw) else { return nil }
+        return SpaceIdentifier(value)
+    }
+
+    /// Picks the display whose Space strip the window is actually on, and where in
+    /// that strip it sits.
+    ///
+    /// Keyed on the window's own Space rather than on which display its frame
+    /// overlaps. A window can sit on a Space that is not the one its display is
+    /// currently showing, and moving it relative to the *visible* Space instead of
+    /// its own would send it somewhere the user did not ask for.
+    ///
+    /// A window assigned to every Space (`Assign To: All Desktops`) occupies many,
+    /// so the first display owning any of them wins; with such a window there is no
+    /// better answer, and it is at least deterministic in `displaySpaces` order.
+    ///
+    /// Pure, and public, so it can be tested: this is the one piece of the Spaces
+    /// logic that is neither trivial nor exercised by the private API, and it lived
+    /// in the untested `App` target until a reviewer pointed out that its
+    /// untestability was a placement choice rather than a fact.
+    public static func locate(
+        windowOn occupied: [SpaceIdentifier],
+        in layouts: [SpaceLayout]
+    ) -> (spaces: [SpaceIdentifier], current: SpaceIdentifier, display: String)? {
+        // No early return for an empty `occupied`: the loop below already yields
+        // nil, since no layout can contain a Space from an empty list. A guard was
+        // written here first and removing it broke no test — because it could not.
+        // The test that pins the empty case stays, as it describes the behaviour
+        // rather than this line.
+        for layout in layouts {
+            guard let here = occupied.first(where: { layout.spaces.contains($0) }) else { continue }
+            return (layout.spaces, here, layout.displayIdentifier)
+        }
+        return nil
     }
 
     public func spaces(of windowID: CGWindowID) -> [SpaceIdentifier] {
@@ -83,7 +152,7 @@ public final class SpaceService: Sendable {
         // 0x7 selects all spaces a window occupies, per move.swift, which
         // used it for the before/after read that proved the move worked.
         let raw = copy(connectionID(), 0x7, [windowID] as CFArray) as? [Int] ?? []
-        return raw.map { SpaceIdentifier(UInt64($0)) }
+        return raw.compactMap(Self.spaceIdentifier)
     }
 
     /// Moves the window and **verifies** it, rather than reporting the success of
@@ -95,17 +164,36 @@ public final class SpaceService: Sendable {
     /// that did not move leaves the user staring at a Space it is not on —
     /// exactly the "window has vanished" outcome that rule exists to prevent.
     ///
-    /// The read-back is safe to do synchronously: measured on this machine, the
-    /// new Space is observable on the first poll, around three to six
-    /// milliseconds, so there is no need to sleep or to hop off the main thread
-    /// in a hotkey handler.
+    /// The read-back is cheap enough to do synchronously in a hotkey handler:
+    /// measured on this machine, the new Space was already visible to the first
+    /// read, and a single read costs three to six *milliseconds*.
+    ///
+    /// It is still a race — the window server is another process — so the read is
+    /// retried a bounded number of times. A single read that lost the race would
+    /// report failure for a move that worked, and the caller would then decline to
+    /// follow a window that had in fact gone: the user is left on the old Space
+    /// with the window apparently vanished, which is the exact outcome the return
+    /// value exists to prevent.
     @discardableResult
     public func move(windowID: CGWindowID, to space: SpaceIdentifier) -> Bool {
         guard let connectionID = sky.connectionID, let move = sky.moveWindowsToManagedSpace else { return false }
         move(connectionID(), [windowID] as CFArray, space.rawValue)
         // `contains` rather than equality: a window assigned to every Space
         // legitimately reports several, and that is not a failure.
-        return spaces(of: windowID).contains(space)
+        return confirm { spaces(of: windowID).contains(space) }
+    }
+
+    /// Polls `condition` a bounded number of times.
+    ///
+    /// Bounded and short: this runs on the main thread inside a hotkey handler, so
+    /// the ceiling matters more than the certainty. Roughly 50ms worst case, which
+    /// is imperceptible, against a measured typical cost of one read.
+    private func confirm(_ condition: () -> Bool) -> Bool {
+        for attempt in 0..<10 {
+            if condition() { return true }
+            if attempt < 9 { usleep(5_000) }
+        }
+        return false
     }
 
     @discardableResult
@@ -114,6 +202,14 @@ public final class SpaceService: Sendable {
             return false
         }
         setSpace(connectionID(), display as CFString, space.rawValue)
-        return true
+        // Verified by reading the display's current Space back, for the same
+        // reason `move` does: `SLSManagedDisplaySetCurrentSpace` returns `Void`,
+        // so reporting success for having called it says nothing. This is the
+        // step whose silent failure IS the vanished-window outcome — the window
+        // has moved and the user has not been taken to it — so it is the last
+        // place to accept "I called a function" as an answer.
+        return confirm {
+            displaySpaces().first { $0.displayIdentifier == display }?.current == space
+        }
     }
 }

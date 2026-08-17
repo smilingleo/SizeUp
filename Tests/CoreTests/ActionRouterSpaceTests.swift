@@ -119,9 +119,22 @@ private let spaceThree = SpaceIdentifier(3)
     #expect(fake.moves.isEmpty)
 }
 
-/// The load-bearing test: the window's frame does not change on a Space
-/// move, so recording a placement or advancing the cycle would corrupt Snap
-/// Back and the size cycle for an action that never touched the frame.
+/// A Space move must not corrupt Snap Back's target.
+///
+/// This test is WEAKER than it looks, and measuring which mutations it catches was
+/// worth more than trusting the name it was first given ("the load-bearing test",
+/// which it is not — see the cycle test below). Measured:
+///
+///   - a `record` with a frame from outside the store: CAUGHT.
+///   - a `record` passing the current frame as both achieved and previous:
+///     NOT caught. `WindowStateStore.record` keeps the existing `originalFrame`
+///     when the previous frame is one it applied itself, so a spurious recording
+///     of a move that changed no frame preserves the Snap Back target by accident.
+///   - the Space path setting a frame at all: NOT caught here.
+///
+/// It is kept because the property it states is the one users feel, and it does
+/// catch the corruption that actually loses data. The cycle test below is what
+/// stops a spurious `record` in general.
 @MainActor
 @Test func spaceMoveDoesNotRecordAPlacementOrDisturbSnapBack() {
     let original = CGRect(x: 250, y: 175, width: 900, height: 700)
@@ -144,9 +157,15 @@ private let spaceThree = SpaceIdentifier(3)
     #expect(window.stored != placedFrame)
 }
 
-/// Same pin as above, from a different angle: the store's cycle position
-/// must be untouched by a Space move, so the next placement press still
-/// behaves as a first press rather than an advance.
+/// **This is the load-bearing test.** The store's cycle position must be untouched
+/// by a Space move, so the next placement press still behaves as a first press
+/// rather than an advance.
+///
+/// It is the one that catches a spurious `record` in the Space path in every form
+/// measured — including the identical-frames form that slips past the Snap Back
+/// test above, and a Space move that wrongly changes the frame. The retained
+/// action is asserted as well as the step, because the step alone survived one of
+/// those mutations.
 @MainActor
 @Test func spaceMoveDoesNotAdvanceTheSizeCycle() {
     let window = TestWindow(frame: CGRect(x: 0, y: 0, width: 800, height: 600), windowID: 42)

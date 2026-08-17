@@ -37,6 +37,12 @@ public struct ActionRouter {
     public func perform(_ action: Action) {
         guard let window = windows.focusedWindow() else { return }
         if let bundle = window.bundleIdentifier, skipList.contains(bundle) { return }
+        // A Space move does not use `current`, so this guard makes it require a
+        // readable frame it has no need for. Kept deliberately: a focused window
+        // whose frame cannot be read is one Accessibility is failing on generally,
+        // and one precondition for every action is easier to reason about than a
+        // per-action set. Recorded in the deferred findings rather than left as a
+        // surprise.
         guard let current = window.frame() else { return }
 
         switch action {

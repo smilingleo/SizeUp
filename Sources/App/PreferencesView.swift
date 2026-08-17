@@ -298,8 +298,8 @@ struct PreferencesView: View {
             Text(
                 viewModel.followsWindowToSpace
                     ? "Moving a window to another Space switches to that Space, which is what SizeUp does."
-                    : "The window moves but the screen stays put, so it will look as though the window "
-                        + "has closed. You can follow it with Control-Right Arrow."
+                    : "The window moves but the screen stays put, so it will look as though the "
+                        + "window has closed. Switch Spaces yourself to find it."
             )
             .font(.footnote)
             .foregroundStyle(.secondary)

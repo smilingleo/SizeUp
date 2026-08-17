@@ -169,6 +169,17 @@ Not reachable from the app, where the window is by definition on screen and focu
 during verification: an empty result looks exactly like a parsing bug. Recorded so the next person does
 not go hunting in the parser.
 
+**SkyLight calls run synchronously on the main thread with no timeout.**
+`Sources/SpaceKit/SpaceService.swift` — they are inter-process calls to the window server. Measured at
+three to six milliseconds each, and `move`/`activate` now poll up to ten times, so the worst case is
+roughly 50ms of unresponsiveness on a failing move. Imperceptible in practice and bounded, but it is the
+main thread and there is no way to cancel.
+
+**`perform` requires a readable frame even for a Space move, which does not use it.**
+`Sources/Core/ActionRouter.swift` — a focused window whose frame Accessibility cannot read therefore
+cannot be moved between Spaces either. Deliberate: one precondition for all actions is simpler than a
+per-action set, and such a window is broken for every other action anyway.
+
 **Space moves are not undoable and Snap Back does not restore them.** Snap Back is about frames; a window
 moved to another Space stays there. Consistent, but a user who moves a window by accident with following
 switched off has to go and find it.
