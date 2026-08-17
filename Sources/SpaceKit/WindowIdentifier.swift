@@ -8,7 +8,7 @@ import Foundation
 /// This is a separate resolver from `SkyLight`, because it lives in
 /// ApplicationServices rather than SkyLight and is a single symbol rather
 /// than a family — no reason to route it through the same struct.
-enum WindowIdentifier {
+public enum WindowIdentifier {
     // _AXUIElementGetWindow(element, &windowID) -> AXError
     // Resolved and called successfully in
     // .superpowers/sdd/2026-08-14-sizeup2-m4/ax.swift against a real focused
@@ -24,7 +24,7 @@ enum WindowIdentifier {
 
     /// `nil` if the symbol is unavailable or the lookup itself fails — a
     /// destroyed or otherwise invalid `AXUIElement` must not trap here.
-    static func windowID(of element: AXUIElement) -> CGWindowID? {
+    public static func windowID(of element: AXUIElement) -> CGWindowID? {
         guard let getWindow else { return nil }
         var windowID: UInt32 = 0
         guard getWindow(element, &windowID) == .success else { return nil }

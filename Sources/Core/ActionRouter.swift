@@ -11,6 +11,8 @@ public struct ActionRouter {
     private let gaps: Gaps
     private let spans: [Span]
     private let skipList: Set<String>
+    private let spaces: SpaceControlling?
+    private let followsWindowToSpace: Bool
 
     public init(
         screens: ScreenProviding,
@@ -18,7 +20,9 @@ public struct ActionRouter {
         store: WindowStateStore,
         gaps: Gaps = .zero,
         spans: [Span] = [.half],
-        skipList: Set<String> = []
+        skipList: Set<String> = [],
+        spaces: SpaceControlling? = nil,
+        followsWindowToSpace: Bool = true
     ) {
         self.screens = screens
         self.windows = windows
@@ -26,6 +30,8 @@ public struct ActionRouter {
         self.gaps = gaps
         self.spans = spans.isEmpty ? [.half] : spans
         self.skipList = skipList
+        self.spaces = spaces
+        self.followsWindowToSpace = followsWindowToSpace
     }
 
     public func perform(_ action: Action) {
@@ -57,9 +63,27 @@ public struct ActionRouter {
                          achievedFrame: achieved, previousFrame: current,
                          step: placement.step)
 
-        case .space:
-            // M4.
-            return
+        // A space move must not record a placement or advance the size
+        // cycle: the window's frame does not change, so recording one would
+        // corrupt Snap Back and the cycle position. Every step below returns
+        // early on failure, so a machine without the private API (or a
+        // window with no derivable `CGWindowID`) does nothing rather than
+        // crash.
+        case .space(let direction):
+            guard let spaces, spaces.isAvailable,
+                  let windowID = window.windowID,
+                  let layout = spaces.layout(containing: windowID),
+                  let destination = neighbouringSpace(
+                      from: layout.current, in: layout.spaces, direction: direction
+                  ),
+                  spaces.move(windowID: windowID, to: destination)
+            else { return }
+            // Following only happens after a successful move: following to a
+            // Space the window did not reach would leave the user staring at
+            // an empty Space.
+            if followsWindowToSpace {
+                _ = spaces.activate(destination, onDisplay: layout.display)
+            }
 
         // Spelled out rather than `default:` so that a future `Action` case
         // fails to compile instead of silently being treated as a placement.

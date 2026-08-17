@@ -85,6 +85,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// mutating six properties and cannot end up half-applied. Reusing `store`
     /// is the point: a preferences change must not cost the user their Snap Back
     /// origins.
+    /// Built once and reused. Resolving the private symbols is cheap, but
+    /// `isAvailable` is read while building the menu and it should not depend on
+    /// how many times the router has been rebuilt.
+    private let spaces = SystemSpaceController()
+
     private func rebuildRouter() {
         let screens = SystemScreenProvider()
         let current = settings.settings
@@ -96,7 +101,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             store: store,
             gaps: current.gaps.resolved,
             spans: current.resolvedCycle,
-            skipList: Set(current.skippedBundleIdentifiers)
+            skipList: Set(current.skippedBundleIdentifiers),
+            spaces: spaces,
+            followsWindowToSpace: current.followsWindowToSpace
         )
     }
 
@@ -249,6 +256,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 // Name the reason. "unavailable" gave the user no way to tell a
                 // bug in our keymap from SizeUp still holding the shortcut.
                 item.title += "  (\(failure.explanation))"
+            }
+            // A Spaces action whose private API did not resolve would otherwise
+            // sit there looking identical to one that works, and do nothing when
+            // clicked. Saying so is the difference between a known limitation on
+            // a future macOS and an apparently broken app.
+            if case .space = action, !spaces.isAvailable {
+                item.title += "  (unavailable on this macOS)"
+                item.toolTip =
+                    "Sizeup2 moves windows between Spaces using a private system interface "
+                    + "that this version of macOS does not provide."
             }
             menu.addItem(item)
         }

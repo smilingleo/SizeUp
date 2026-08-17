@@ -86,11 +86,26 @@ public final class SpaceService: Sendable {
         return raw.map { SpaceIdentifier(UInt64($0)) }
     }
 
+    /// Moves the window and **verifies** it, rather than reporting the success of
+    /// having called a function.
+    ///
+    /// `SLSMoveWindowsToManagedSpace` returns `Void`, so calling it tells us
+    /// nothing. Returning `true` regardless would make the caller's "only follow
+    /// the window if the move succeeded" rule meaningless, and following a window
+    /// that did not move leaves the user staring at a Space it is not on —
+    /// exactly the "window has vanished" outcome that rule exists to prevent.
+    ///
+    /// The read-back is safe to do synchronously: measured on this machine, the
+    /// new Space is observable on the first poll, around three to six
+    /// milliseconds, so there is no need to sleep or to hop off the main thread
+    /// in a hotkey handler.
     @discardableResult
     public func move(windowID: CGWindowID, to space: SpaceIdentifier) -> Bool {
         guard let connectionID = sky.connectionID, let move = sky.moveWindowsToManagedSpace else { return false }
         move(connectionID(), [windowID] as CFArray, space.rawValue)
-        return true
+        // `contains` rather than equality: a window assigned to every Space
+        // legitimately reports several, and that is not a failure.
+        return spaces(of: windowID).contains(space)
     }
 
     @discardableResult

@@ -72,6 +72,12 @@ public struct Settings: Sendable, Equatable, Codable {
     public var gaps: GapSettings
     public var cycle: [SpanSetting]
     public var skippedBundleIdentifiers: [String]
+    /// SizeUp's behaviour, and the one the author's muscle memory expects:
+    /// moving a window to another Space follows it there. `false` leaves the
+    /// user on their current Space while the window moves — deliberate for
+    /// someone who wants to stage windows across Spaces without being pulled
+    /// along.
+    public var followsWindowToSpace: Bool
     /// Overrides, not a full keymap. An action absent here keeps whatever
     /// `DefaultKeymap` ships; see `ShortcutSetting`'s doc for why persisting
     /// the resolved keymap instead would silently orphan a future version's
@@ -82,12 +88,14 @@ public struct Settings: Sendable, Equatable, Codable {
         gaps: GapSettings = GapSettings(),
         cycle: [SpanSetting] = [SpanSetting(occupied: 1, columns: 2)],
         skippedBundleIdentifiers: [String] = [],
-        shortcutOverrides: [ShortcutSetting] = []
+        shortcutOverrides: [ShortcutSetting] = [],
+        followsWindowToSpace: Bool = true
     ) {
         self.gaps = gaps
         self.cycle = cycle
         self.skippedBundleIdentifiers = skippedBundleIdentifiers
         self.shortcutOverrides = shortcutOverrides
+        self.followsWindowToSpace = followsWindowToSpace
     }
 
     /// A synthesized `Codable` throws on a missing key, and a settings file
@@ -106,10 +114,13 @@ public struct Settings: Sendable, Equatable, Codable {
         shortcutOverrides =
             try container.decodeIfPresent([ShortcutSetting].self, forKey: .shortcutOverrides)
                 ?? defaults.shortcutOverrides
+        followsWindowToSpace =
+            try container.decodeIfPresent(Bool.self, forKey: .followsWindowToSpace)
+                ?? defaults.followsWindowToSpace
     }
 
     private enum CodingKeys: String, CodingKey {
-        case gaps, cycle, skippedBundleIdentifiers, shortcutOverrides
+        case gaps, cycle, skippedBundleIdentifiers, shortcutOverrides, followsWindowToSpace
     }
 
     /// The resolved cycle, with invalid steps dropped and order preserved.

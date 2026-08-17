@@ -51,9 +51,15 @@ public enum SizeUpImporter {
         "Prev Monitor": "display.previous",
         "Space Next": "space.next",
         "Space Prev": "space.previous",
-        "Space Above": "space.above",
-        "Space Below": "space.below",
     ]
+
+    /// SizeUp keys deliberately never turned into a binding: macOS has had a
+    /// single horizontal strip of Spaces per display since Lion, so there is
+    /// no vertical neighbour for either to reach. Mapping them to next/previous
+    /// would be behaviour invented rather than reproduced — see
+    /// `SpaceSequence`'s doc comment — so they are reported as skipped instead
+    /// of silently dropped, and the import alert can name them.
+    private static let alwaysSkipped: Set<String> = ["Space Above", "Space Below"]
 
     /// SizeUp stores its preferences the ordinary `NSUserDefaults` way: a
     /// plist named after its bundle identifier under `~/Library/Preferences`.
@@ -80,6 +86,14 @@ public enum SizeUpImporter {
 
         var overrides: [ShortcutSetting] = []
         var skipped: [String] = []
+
+        // `alwaysSkipped` entries never had a `keyToAction` mapping to begin
+        // with (there is no `Action` for them), so they are reported here,
+        // before the loop below, rather than falling out of it naturally.
+        // Only reported when present: absent is not the same as unusable.
+        for sizeUpKey in alwaysSkipped.sorted() where root[sizeUpKey] != nil {
+            skipped.append(sizeUpKey)
+        }
 
         // Sorted, because iterating the dictionary directly made the order of
         // `overrides` — and so the order of the array written to settings.json —

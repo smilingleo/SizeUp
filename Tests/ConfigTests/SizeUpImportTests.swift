@@ -13,11 +13,14 @@ private var fixtureURL: URL {
         .appendingPathComponent("Fixtures/sizeup-user-config.plist")
 }
 
-@Test func importingTheFixtureYieldsAllSeventeenKeysAndNoSkips() {
+@Test func importingTheFixtureYieldsFifteenKeysAndSkipsTheTwoSpacesDirectionsWithNoNeighbour() {
     let result = SizeUpImporter.read(at: fixtureURL)
 
-    #expect(result.overrides.count == 17)
-    #expect(result.skipped.isEmpty)
+    // Space Above/Space Below are skipped, not imported: macOS has had a
+    // single horizontal strip of Spaces per display since Lion, so neither
+    // has a real neighbour to move to.
+    #expect(result.overrides.count == 15)
+    #expect(result.skipped == ["Space Above", "Space Below"])
 }
 
 @Test func importedActionsCoverEveryHalfQuarterAndSpaceIdentifier() {
@@ -29,7 +32,7 @@ private var fixtureURL: URL {
         "quarter.upperLeft", "quarter.upperRight", "quarter.lowerLeft", "quarter.lowerRight",
         "fullScreen", "center", "snapBack",
         "display.next", "display.previous",
-        "space.next", "space.previous", "space.above", "space.below",
+        "space.next", "space.previous",
     ]
     #expect(actions == expected)
 }
@@ -177,8 +180,6 @@ private var fixtureURL: URL {
         "display.previous",   // Prev Monitor
         "half.right",         // Right
         "snapBack",           // SnapBack
-        "space.above",        // Space Above
-        "space.below",        // Space Below
         "space.next",         // Space Next
         "space.previous",     // Space Prev
         "half.top",           // Up

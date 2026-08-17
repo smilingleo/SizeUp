@@ -20,12 +20,15 @@ let package = Package(
     ],
     targets: [
         .target(name: "Geometry"),
-        .target(name: "WindowKit", dependencies: ["Geometry"]),
+        // Depends on SpaceKit purely for `_AXUIElementGetWindow`. The alternative was a
+        // second private-symbol lookup here, and "every private symbol lives in SpaceKit"
+        // is a rule worth more than avoiding one slightly odd edge.
+        .target(name: "WindowKit", dependencies: ["Geometry", "SpaceKit"]),
         .target(name: "Hotkeys"),
         .target(name: "SpaceKit", dependencies: ["Geometry"]),
         .target(name: "Core", dependencies: ["Geometry", "WindowKit", "Hotkeys"]),
         .target(name: "Config", dependencies: ["Geometry"]),
-        .executableTarget(name: "App", dependencies: ["Geometry", "WindowKit", "Hotkeys", "Core", "Config"]),
+        .executableTarget(name: "App", dependencies: ["Geometry", "WindowKit", "Hotkeys", "Core", "Config", "SpaceKit"]),
         .testTarget(name: "GeometryTests", dependencies: ["Geometry", testing]),
         .testTarget(name: "WindowKitTests", dependencies: ["WindowKit", "Geometry", testing]),
         .testTarget(name: "HotkeysTests", dependencies: ["Hotkeys", testing]),
