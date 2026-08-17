@@ -34,14 +34,13 @@ memory.
 
 ## Installing
 
-> **Before you run Sizeup2 for the first time**, SizeUp is almost certainly
-> already claiming the exact shortcuts Sizeup2 needs. Open SizeUp's
-> preferences and **disable** its Halves, Quarters, Full Screen, Center, and
-> Snap Back shortcuts, keeping only its four Spaces shortcuts (SizeUp's
-> Spaces handling is why it stays installed at all in this milestone — see
-> "Status" below). Two processes racing for the same global hotkey is not
-> deterministic: whichever one wins can vary, and losing is silent unless
-> you look for it. A ⚠️ warning-triangle icon in the menu bar (instead of
+> **Before you run Sizeup2 for the first time**, quit and uninstall SizeUp. It
+> claims the exact shortcuts Sizeup2 needs, and two processes racing for the
+> same global hotkey is not deterministic: whichever one wins can vary, and
+> losing is silent unless you look for it. Sizeup2 now covers everything
+> SizeUp did, so there is no longer any reason to keep it — but run
+> **Import Shortcuts from SizeUp…** first if you want your existing bindings
+> carried over, since that reads SizeUp's preferences file. A ⚠️ warning-triangle icon in the menu bar (instead of
 > the normal split-rectangle icon) means one or more shortcuts could not be
 > claimed — open the menu to see which.
 >
@@ -107,7 +106,7 @@ run.
 
 ## Status
 
-Milestones M1 to M4 are complete:
+All five milestones are complete.
 
 - **M1** — single-display placement: halves, quarters, full screen, centre, snap back, and a status-bar
   menu that mirrors every shortcut and names any shortcut another app has already claimed.
@@ -117,11 +116,9 @@ Milestones M1 to M4 are complete:
 - **M3** — settings, persistence, and a Preferences window, which is what finally makes gaps, size
   cycling, and the skip list reachable.
 - **M4** — rebindable shortcuts, and importing them from an existing SizeUp installation.
+- **M5** — moving windows between Spaces, optionally following them there.
 
-Not yet implemented:
-
-- **M5** — macOS Spaces (`Next Space` / `Previous Space`). Keep SizeUp installed for these until then.
-  SizeUp's four Spaces shortcuts *do* import, but they cannot fire yet, and the import says so.
+SizeUp is no longer needed.
 
 ### Shortcuts
 
@@ -136,6 +133,26 @@ order you cannot predict.
 
 **Import Shortcuts from SizeUp…** in the menu reads `~/Library/Preferences/com.irradiatedsoftware.SizeUp.plist`
 and adopts all seventeen of its bindings. The menu item is disabled if that file is not there.
+
+### Spaces
+
+`⌃⌘→` and `⌃⌘←` move the focused window to the next or previous Space, wrapping at either end, and by
+default switch to that Space so you can see where the window went. Turn that off under
+**Settings → General → Spaces** if you would rather stay put — the window will appear to have closed.
+
+Moving a window between Spaces does not count as a placement: Snap Back still restores the frame from
+before you tiled it, and the size cycle does not advance.
+
+**This uses private system interfaces.** There is no public API for moving a window between Spaces, and
+every window manager that does it calls the same undocumented SkyLight functions. They are confined to
+one target (`Sources/SpaceKit/`), every symbol is resolved optionally, and if a future macOS removes them
+the two Spaces shortcuts stop working and say so in the menu while everything else carries on.
+
+SizeUp also binds **Space Above** and **Space Below**. Those cannot be reproduced, because macOS has
+arranged Spaces in a single horizontal strip per display since Lion — there is no Space above anything.
+They have not worked in SizeUp for over a decade. The importer skips them and tells you it did, rather
+than remapping them onto next and previous: a guess whose failure mode is a window landing somewhere you
+did not ask for is worse than a missing feature.
 
 Known not to work: **Open at Login**. It is implemented, but macOS will not register an ad-hoc-signed
 app as a login item at any location. Add Sizeup2 under System Settings → General → Login Items instead.

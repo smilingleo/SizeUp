@@ -1,4 +1,4 @@
-# Deferred Findings — carried out of M1, updated after M2, M3 and M4
+# Deferred Findings — carried out of M1, updated after every milestone through M5
 
 Every item below was found by review during M1 and deliberately **not** fixed then. The M1 execution
 ledger lives in `.superpowers/`, which is gitignored, so this file is the durable record. Each item
@@ -151,6 +151,27 @@ The decision logic is in `KeymapResolver` and tested; the view, the event monito
 suspend/resume pairing are not, in line with the rest of `App`. The suspend/resume pairing in particular
 is only verifiable by hand, and its failure mode — every shortcut silently released — is nasty. It is on
 the M4 manual checklist.
+
+## Deferred out of M5
+
+**`SpaceService`'s calls into private API are untested, and cannot be unit-tested.**
+Only the parsing of `SLSCopyManagedDisplaySpaces`-shaped data and the symbol-degradation paths have
+tests. The moves themselves were verified by compiling the real sources into a throwaway binary and
+watching a window change Space (recorded in the M5 ledger), which is repeatable but manual.
+
+**`SystemSpaceController.layout(containing:)` picks the first display that owns one of the window's
+Spaces.** Sources/App/SystemSpaceController.swift — a window assigned to *all* Spaces occupies many, and
+which display is consulted first is `SLSCopyManagedDisplaySpaces` order. Defensible, and untested because
+it lives in `App`.
+
+**`spaces(of:)` returns empty for a window the window server has not composited yet.**
+Not reachable from the app, where the window is by definition on screen and focused, but it cost time
+during verification: an empty result looks exactly like a parsing bug. Recorded so the next person does
+not go hunting in the parser.
+
+**Space moves are not undoable and Snap Back does not restore them.** Snap Back is about frames; a window
+moved to another Space stays there. Consistent, but a user who moves a window by accident with following
+switched off has to go and find it.
 
 ## Toolchain hazards
 
