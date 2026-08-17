@@ -29,6 +29,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         settings.load()
         rebuildRouter()
+        // Before the status item is built, and independently of whether
+        // Accessibility has been granted. `resolveKeymap` used to run only
+        // inside `registerHotkeys`, which is gated on that permission, so on any
+        // launch without it the menu listed the DEFAULT shortcuts while the
+        // Shortcuts tab showed the real ones — and an unbound action appeared
+        // bound.
+        resolveKeymap()
 
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
@@ -68,16 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// decisions in them are in `Config.ShortcutSetting.resolved`, which drops
     /// unknown identifiers and modifier-less keys, and in `KeymapResolver`.
     private func resolveKeymap() {
-        keymap = KeymapResolver.resolve(
-            overrides: settings.settings.shortcutOverrides.compactMap { setting in
-                guard let resolved = setting.resolved else { return nil }
-                return ShortcutOverride(
-                    action: resolved.action,
-                    keyCode: resolved.keyCode,
-                    modifierFlags: resolved.modifierFlags
-                )
-            }
-        )
+        keymap = KeymapResolver.resolve(overrides: coreOverrides(from: settings.settings))
     }
 
     /// Rebuilt rather than mutated when settings change.
@@ -114,8 +112,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// shortcut live and `RegisterEventHotKey` would refuse the new one as
     /// already claimed by this app.
     private func registerHotkeys() {
-        hotkeys.unregisterAll()
         resolveKeymap()
+        // Re-registering during recording would restore exactly the trap
+        // `suspendHotkeys` exists to avoid: the General tab saving, or a SizeUp
+        // import finishing, would re-arm the hotkeys under a recorder that is
+        // still listening, and the next keystroke would move a window instead of
+        // being recorded. The menu is still refreshed, so nothing looks stale.
+        guard !isRecording else {
+            updateStatusIcon()
+            rebuildMenu()
+            return
+        }
+        hotkeys.unregisterAll()
         for binding in keymap.bindings {
             guard let shortcut = binding.shortcut else { continue }
             let action = binding.action
@@ -134,6 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// blind to exactly the shortcuts a user wants to change: pressing the
     /// current binding would perform its action instead of being recorded.
     private func suspendHotkeys() {
+        isRecording = true
         hotkeys.unregisterAll()
     }
 
@@ -141,9 +150,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// closed mid-recording, or the app stays silently inert with every shortcut
     /// released and no indication why.
     private func resumeHotkeys() {
+        isRecording = false
         guard AccessibilityPermission.isGranted else { return }
         registerHotkeys()
     }
+
+    /// True only while the shortcut recorder is listening.
+    private var isRecording = false
 
     /// The permission dialog is asynchronous and grants without relaunching,
     /// so poll until it is granted, then register.
@@ -356,6 +369,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             try settings.update { $0.shortcutOverrides = result.overrides }
             rebuildRouter()
             registerHotkeys()
+            preferencesWindow?.refresh()
             outcome.messageText = "Imported \(result.overrides.count) shortcuts"
             var detail = "Sizeup2 is now using SizeUp's shortcuts."
             if !result.skipped.isEmpty {

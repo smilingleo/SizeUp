@@ -22,7 +22,7 @@ import Hotkeys
 
 @Test func oneOverrideChangesOnlyItsOwnBindingAndLeavesEveryOtherActionAtItsDefault() throws {
     let target = try #require(DefaultKeymap.bindings.first { $0.1 == .fullScreen }).1
-    let newShortcut = Shortcut(keyCode: KeyCode.c, modifierFlags: 0)
+    let newShortcut = Shortcut(keyCode: KeyCode.c, modifierFlags: 1_310_720)
     let overrides = [ShortcutOverride(action: target, keyCode: newShortcut.keyCode, modifierFlags: newShortcut.modifierFlags)]
 
     let resolved = KeymapResolver.resolve(overrides: overrides).bindings
@@ -61,7 +61,7 @@ import Hotkeys
     // settings file can be edited by hand.
     let (_, firstAction) = DefaultKeymap.bindings[0]
     let (_, secondAction) = DefaultKeymap.bindings[1]
-    let collidingShortcut = Shortcut(keyCode: 99, modifierFlags: 42)
+    let collidingShortcut = Shortcut(keyCode: 99, modifierFlags: 1_835_008)
 
     let overrides = [
         ShortcutOverride(action: firstAction, keyCode: collidingShortcut.keyCode, modifierFlags: collidingShortcut.modifierFlags),
@@ -97,8 +97,8 @@ import Hotkeys
 
 @Test func aLaterOverrideForTheSameActionWinsOverAnEarlierOne() throws {
     let target = try #require(DefaultKeymap.bindings.first { $0.1 == .center }).1
-    let firstAttempt = Shortcut(keyCode: 1, modifierFlags: 100)
-    let finalAttempt = Shortcut(keyCode: 2, modifierFlags: 200)
+    let firstAttempt = Shortcut(keyCode: 1, modifierFlags: 786_432)
+    let finalAttempt = Shortcut(keyCode: 2, modifierFlags: 917_504)
     let overrides = [
         ShortcutOverride(action: target, keyCode: firstAttempt.keyCode, modifierFlags: firstAttempt.modifierFlags),
         ShortcutOverride(action: target, keyCode: finalAttempt.keyCode, modifierFlags: finalAttempt.modifierFlags),
@@ -162,7 +162,7 @@ import Hotkeys
     )
     let (overrides, displaced) = KeymapResolver.assigning(snapBack, to: .center, in: [])
 
-    #expect(displaced == .snapBack)
+    #expect(displaced == [.snapBack])
     let resolution = KeymapResolver.resolve(overrides: overrides)
     #expect(resolution.shortcut(for: .center) == snapBack)
     // Unbound, not left to collide, and not merely reverted to its default --
@@ -176,7 +176,7 @@ import Hotkeys
     let free = Shortcut(keyCode: 105, modifierFlags: 1_835_008)
     let (overrides, displaced) = KeymapResolver.assigning(free, to: .center, in: [])
 
-    #expect(displaced == nil)
+    #expect(displaced.isEmpty)
     let resolution = KeymapResolver.resolve(overrides: overrides)
     #expect(resolution.shortcut(for: .center) == free)
     // Every other action keeps exactly what it had.
@@ -203,4 +203,33 @@ import Hotkeys
 // above needs an order-independent comparison and Action is not Hashable.
 extension Action {
     var description: String { String(reflecting: self) }
+}
+
+
+/// `assigning` used to consult only `resolve`'s output, which merges overrides
+/// into `DefaultKeymap` — so an override for an action with no default entry was
+/// invisible to it and could not be displaced.
+///
+/// A SizeUp import creates exactly four such overrides, for `space.*`. Left in
+/// the file, one of them is a hidden second claim on the key, inert only until
+/// Spaces ships a default and `unbindLosers` kills one of them without saying
+/// so. That is precisely the "presses a key that will never work again" outcome
+/// the import's own alert was written to prevent.
+@Test func assigningDisplacesAnOverrideForAnActionThatHasNoDefaultBinding() throws {
+    let contested = Shortcut(keyCode: KeyCode.rightArrow, modifierFlags: 1_310_720)
+    let imported = [
+        ShortcutOverride(
+            action: .space(.next),
+            keyCode: contested.keyCode,
+            modifierFlags: contested.modifierFlags
+        )
+    ]
+    #expect(!KeymapResolver.resolve(overrides: imported).bindings.contains { $0.action == .space(.next) })
+
+    let (next, displaced) = KeymapResolver.assigning(contested, to: .center, in: imported)
+
+    #expect(displaced == [.space(.next)])
+    let spaceEntry = try #require(next.first { $0.action == .space(.next) })
+    #expect(spaceEntry.keyCode == nil)
+    #expect(next.filter { $0.keyCode == contested.keyCode }.count == 1)
 }

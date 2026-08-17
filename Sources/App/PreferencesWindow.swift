@@ -113,4 +113,30 @@ extension PreferencesWindow: NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         shortcutsViewModel?.cancelRecording()
     }
+
+    /// Also on losing key focus, for the same reason.
+    ///
+    /// Closing the window is the obvious way to back out, but it is not the only
+    /// one: command-tabbing away, or clicking any other window, leaves the
+    /// recorder listening for a keystroke it can no longer receive while every
+    /// hotkey stays released. The app then appears completely dead, with the
+    /// Settings window sitting open showing "Press a key" in a row the user has
+    /// forgotten about.
+    func windowDidResignKey(_ notification: Notification) {
+        shortcutsViewModel?.cancelRecording()
+    }
+
+    /// Re-reads the settings file into both tabs, for a change made from
+    /// outside this window.
+    ///
+    /// The SizeUp import writes shortcuts straight to the file. With the window
+    /// open, the Shortcuts tab went on displaying the bindings from before the
+    /// import — a keymap that is emphatically not the one now registered.
+    /// Harmless when importing the file the defaults came from, since nothing
+    /// changes; wrong for anybody else's.
+    func refresh() {
+        guard window != nil else { return }
+        viewModel?.reload()
+        shortcutsViewModel?.reload()
+    }
 }

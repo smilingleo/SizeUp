@@ -101,3 +101,26 @@ import Foundation
     #expect(NSEvent.ModifierFlags(rawValue: 1_835_008)
         .isSuperset(of: [.control, .option, .command]))
 }
+
+/// The same class of defect as the modifier check beside it, but this one was
+/// fatal rather than merely ignored.
+///
+/// Virtual key codes are 16-bit. `UCKeyTranslate` takes a `UInt16` and the
+/// conversion traps, so a hand-edited `"keyCode": 70000` aborted the app while
+/// the status menu was being built — on every launch, unrecoverable without
+/// editing the file back by hand. Rejected here as well as guarded in `KeyName`,
+/// because a value this size cannot name a real key under any implementation and
+/// the settings boundary is where nonsense should stop.
+@Test func aKeyCodeTooLargeToBeARealKeyIsRejected() {
+    let absurd = ShortcutSetting(action: "half.left", keyCode: 70_000, modifierFlags: 1_835_008)
+    #expect(absurd.resolved == nil)
+
+    // The largest value that still fits, to pin the boundary rather than merely
+    // the direction of the comparison.
+    let largestPossible = ShortcutSetting(
+        action: "half.left",
+        keyCode: 65_535,
+        modifierFlags: 1_835_008
+    )
+    #expect(largestPossible.resolved != nil)
+}

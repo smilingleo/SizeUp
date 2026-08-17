@@ -85,6 +85,13 @@ public enum KeyName {
     /// (e.g. `´` before `e`) — a rebind UI needs the label on the key, not
     /// the eventual composed text.
     private static func translate(_ keyCode: UInt32) -> String? {
+        // A virtual key code is 16-bit, and `UInt16(_:)` TRAPS rather than
+        // failing for anything larger. That is reachable from a hand-edited
+        // settings file — `"keyCode": 70000` — and from a plist ComboCode, and
+        // it killed the app on every launch, since the status menu names every
+        // shortcut while it is built. Verified by measurement: KeyName.of(70000)
+        // aborted with "Not enough bits to represent the passed value".
+        guard keyCode <= UInt16.max else { return nil }
         lock.lock()
         defer { lock.unlock() }
         guard let inputSource = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue() else {

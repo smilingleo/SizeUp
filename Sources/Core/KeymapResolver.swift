@@ -118,11 +118,27 @@ public enum KeymapResolver {
         _ shortcut: Shortcut,
         to action: Action,
         in overrides: [ShortcutOverride]
-    ) -> (overrides: [ShortcutOverride], displaced: Action?) {
+    ) -> (overrides: [ShortcutOverride], displaced: [Action]) {
         let current = resolve(overrides: overrides)
-        let displaced = current.bindings.first {
-            $0.shortcut == shortcut && $0.action != action
-        }?.action
+        var displaced = current.bindings.compactMap {
+            $0.shortcut == shortcut && $0.action != action ? $0.action : nil
+        }
+        // Also the overrides `resolve` cannot see. `resolve` merges into
+        // `DefaultKeymap`, so an override for an action that has no default —
+        // the four `space.*` bindings a SizeUp import creates, before Spaces
+        // exists — is absent from `current.bindings` and could not be displaced.
+        // Left in the file it becomes a hidden second claim on this key, which
+        // stays inert only until `space` gains a default and one of them is
+        // unbound silently: exactly the "presses a key that will never work
+        // again" outcome the import alert was written to prevent.
+        let known = current.bindings.map(\.action)
+        for override in overrides
+        where !known.contains(override.action) && override.action != action {
+            guard let keyCode = override.keyCode else { continue }
+            guard Shortcut(keyCode: keyCode, modifierFlags: override.modifierFlags) == shortcut
+            else { continue }
+            displaced.append(override.action)
+        }
 
         var next = overrides.filter { $0.action != action }
         next.append(
@@ -132,13 +148,13 @@ public enum KeymapResolver {
                 modifierFlags: shortcut.modifierFlags
             )
         )
-        if let displaced {
+        for loser in displaced {
             // An explicit unbind entry, not merely the absence of one: absence
             // means "use the default", and the default is very likely the
             // shortcut we just took away.
-            next.removeAll { $0.action == displaced }
+            next.removeAll { $0.action == loser }
             next.append(
-                ShortcutOverride(action: displaced, keyCode: nil, modifierFlags: 0)
+                ShortcutOverride(action: loser, keyCode: nil, modifierFlags: 0)
             )
         }
         return (next, displaced)

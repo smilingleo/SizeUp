@@ -58,6 +58,9 @@ final class ShortcutsViewModel {
     /// so the row can explain itself. Cleared on the next recording or on
     /// `reload()`.
     private(set) var displacedMessage: String?
+    /// Explains a conflict that was already in the settings file when it was
+    /// read, as opposed to one the user just created by recording.
+    private(set) var conflictMessage: String?
     var errorMessage: String?
 
     private var monitor: Any?
@@ -81,21 +84,41 @@ final class ShortcutsViewModel {
         cancelRecording()
         store.load()
         adopt(store.settings)
+        // Publishing what was just read, like its sibling in the General tab.
+        // Without this the tab displayed a hand-edited keymap that had never
+        // been registered, and only looked right because the General tab
+        // happened to reload first — load-bearing ordering that nothing stated.
+        onChange()
     }
 
     private func adopt(_ settings: Config.Settings) {
-        let overrides = settings.shortcutOverrides.compactMap { setting -> Core.ShortcutOverride? in
-            guard let resolved = setting.resolved else { return nil }
-            return Core.ShortcutOverride(
-                action: resolved.action,
-                keyCode: resolved.keyCode,
-                modifierFlags: resolved.modifierFlags
-            )
-        }
-        let resolution = KeymapResolver.resolve(overrides: overrides)
+        let resolution = KeymapResolver.resolve(overrides: coreOverrides(from: settings))
         rows = resolution.bindings.map {
             ShortcutRow(action: $0.action, title: DefaultKeymap.title(for: $0.action), shortcut: $0.shortcut)
         }
+        // A hand-edited file can put two actions on one key. `resolve` unbinds
+        // the loser to keep the registration honest, but until this was
+        // rendered the user simply found an action they never touched had lost
+        // its shortcut, with the explanation computed and thrown away.
+        conflictMessage = Self.describe(resolution.conflicts)
+    }
+
+    /// Reports what a hand-edited file asked for, in a stable order — the
+    /// underlying dictionary has none, and a message that reshuffles itself
+    /// between launches reads like a different problem each time.
+    private static func describe(_ conflicts: [Shortcut: [Action]]) -> String? {
+        guard !conflicts.isEmpty else { return nil }
+        let described = conflicts
+            .map { shortcut, actions in
+                let names = actions.map { DefaultKeymap.title(for: $0) }.sorted()
+                return "\(shortcut.displayString) (\(names.joined(separator: " and ")))"
+            }
+            .sorted()
+        let lead = described.count == 1
+            ? "Your settings file gives one shortcut to more than one action: "
+            : "Your settings file gives \(described.count) shortcuts to more than one action: "
+        return lead + described.joined(separator: "; ")
+            + ". Only the first of each is in effect; the others have been unbound."
     }
 
     /// Starts recording for `action`. Suspends the global hotkeys for the
@@ -138,7 +161,7 @@ final class ShortcutsViewModel {
     private func handle(_ event: NSEvent) {
         guard let action = recordingAction else { return }
 
-        if event.keyCode == 53, !hasRealModifier(event.modifierFlags) {
+        if event.keyCode == escapeKeyCode, !hasRealModifier(event.modifierFlags) {
             cancelRecording()
             return
         }
@@ -160,9 +183,17 @@ final class ShortcutsViewModel {
         assign(shortcut, to: action)
     }
 
+    /// Delegates to `Config`, which is what will judge the recorded value on
+    /// the next load. A separate copy here could drift and let the recorder
+    /// accept a chord that is then discarded at launch — a shortcut that works
+    /// until relaunch.
     private func hasRealModifier(_ flags: NSEvent.ModifierFlags) -> Bool {
-        flags.contains(.control) || flags.contains(.option) || flags.contains(.command)
+        Config.ActionIdentifier.hasRealModifier(flags.rawValue)
     }
+
+    /// `kVK_Escape`. Spelled out because `Hotkeys` deliberately does not
+    /// re-export Carbon, and a bare 53 is unreadable.
+    private let escapeKeyCode: UInt16 = 53
 
     private func assign(_ shortcut: Shortcut, to action: Action) {
         let (nextOverrides, displaced) = KeymapResolver.assigning(
@@ -170,14 +201,18 @@ final class ShortcutsViewModel {
             to: action,
             in: currentOverrides()
         )
-        if let displaced {
-            let title = DefaultKeymap.title(for: displaced)
-            displacedMessage =
-                "\(shortcut.displayString) was taken from \(title), which now has no shortcut."
-        } else {
-            displacedMessage = nil
-        }
+        displacedMessage = nil
         save(nextOverrides)
+        // Only after the save, and only if it succeeded: announcing a
+        // displacement that failed to persist would sit next to the red error
+        // message contradicting it, and the shortcut would still be where it was.
+        guard errorMessage == nil, !displaced.isEmpty else { return }
+        let names = displaced.map { DefaultKeymap.title(for: $0) }
+            .sorted()
+            .joined(separator: ", ")
+        let subject = displaced.count == 1 ? "which now has" : "which now have"
+        displacedMessage =
+            "\(shortcut.displayString) was taken from \(names), \(subject) no shortcut."
     }
 
     /// Persists an explicit unbind for `action`. Distinct from simply
@@ -199,14 +234,7 @@ final class ShortcutsViewModel {
     }
 
     private func currentOverrides() -> [Core.ShortcutOverride] {
-        store.settings.shortcutOverrides.compactMap { setting in
-            guard let resolved = setting.resolved else { return nil }
-            return Core.ShortcutOverride(
-                action: resolved.action,
-                keyCode: resolved.keyCode,
-                modifierFlags: resolved.modifierFlags
-            )
-        }
+        coreOverrides(from: store.settings)
     }
 
     private func save(_ overrides: [Core.ShortcutOverride]) {
@@ -229,6 +257,22 @@ final class ShortcutsViewModel {
     }
 }
 
+/// The single translation from stored settings to `Core`'s input type.
+///
+/// There were three identical copies of this `compactMap`, plus a fourth in the
+/// test that was supposed to validate it — so the test validated its own copy
+/// and any of the three could have been mutated without failing anything.
+func coreOverrides(from settings: Config.Settings) -> [Core.ShortcutOverride] {
+    settings.shortcutOverrides.compactMap { setting in
+        guard let resolved = setting.resolved else { return nil }
+        return Core.ShortcutOverride(
+            action: resolved.action,
+            keyCode: resolved.keyCode,
+            modifierFlags: resolved.modifierFlags
+        )
+    }
+}
+
 struct ShortcutsView: View {
     @Bindable var viewModel: ShortcutsViewModel
 
@@ -246,6 +290,13 @@ struct ShortcutsView: View {
             if let displacedMessage = viewModel.displacedMessage {
                 Section {
                     Text(displacedMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                }
+            }
+            if let conflictMessage = viewModel.conflictMessage {
+                Section {
+                    Text(conflictMessage)
                         .font(.footnote)
                         .foregroundStyle(.orange)
                 }

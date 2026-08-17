@@ -74,7 +74,11 @@ public final class SettingsStore {
         try save(next)
     }
 
-    public func save(_ new: Settings) throws {
+    /// Deliberately not `public`: `update(_:)` exists because reconstructing a
+    /// whole `Settings` from the fields an editor happens to know about silently
+    /// erased every other field, and leaving this reachable from the UI leaves
+    /// the footgun loaded. Tests reach it with `@testable`.
+    func save(_ new: Settings) throws {
         let directory = url.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 

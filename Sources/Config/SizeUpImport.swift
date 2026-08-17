@@ -81,7 +81,12 @@ public enum SizeUpImporter {
         var overrides: [ShortcutSetting] = []
         var skipped: [String] = []
 
-        for (sizeUpKey, action) in keyToAction {
+        // Sorted, because iterating the dictionary directly made the order of
+        // `overrides` — and so the order of the array written to settings.json —
+        // differ between runs. A file that reshuffles itself for no reason is
+        // hostile to anyone hand-editing it or diffing it.
+        for sizeUpKey in keyToAction.keys.sorted() {
+            guard let action = keyToAction[sizeUpKey] else { continue }
             // A key the user's SizeUp simply never had (never rebound, or an
             // older version without Spaces support) is not a failure — it is
             // absent, not "present but unusable" — so it is skipped over

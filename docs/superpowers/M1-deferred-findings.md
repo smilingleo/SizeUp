@@ -123,10 +123,21 @@ since the user explicitly asked for SizeUp's bindings, but it means a future rel
 default will not reach anyone who imported. Filtering would require `Config` to know `DefaultKeymap`,
 which the layering forbids; the alternative is to filter in `App`, untested.
 
-**`Shortcut` canonicalises modifier flags, so a settings file can round-trip to a different value.**
-`Sources/Hotkeys/Shortcut.swift` — a hand-edited `"modifierFlags": 1835049` is loaded, canonicalised to
-1835008, and re-persisted as 1835008. Correct, and the only way the type can be compared reliably, but
-it does mean the file is not always byte-stable across a load/save cycle.
+**`Shortcut` canonicalises modifier flags, but the settings file keeps the raw ones.**
+`Sources/Hotkeys/Shortcut.swift`, `Sources/Config/ShortcutSetting.swift` — a hand-edited
+`"modifierFlags": 1835049` is masked to 1835008 wherever it is *compared*, so nothing misbehaves, but
+`ShortcutSetting.resolved` returns the raw value and a later save writes it straight back. Only the
+entry the user just recorded is stored canonically. Harmless, and deliberately not "fixed" by
+canonicalising in `Config`, which would mean `Config` knowing the mask — but it does mean two settings
+files can be byte-different and behaviourally identical. An earlier draft of this file claimed the raw
+value was rewritten canonically; it is not, and that claim was wrong.
+
+**An override the settings file cannot resolve is deleted from the file by the next save.**
+`Sources/App/ShortcutsView.swift` — `currentOverrides()` drops entries with an unknown action, an
+out-of-range key code, or no real modifier, and `save` writes back only what survived. So a typo is
+ignored at launch (correct) and then destroyed (unhelpful), removing the evidence the user needs to fix
+it. Preserving them means carrying unresolvable entries through the view model untouched, which is the
+same shape as the custom-span handling in the General tab.
 
 **A recorded shortcut is not checked against the shortcuts of *other* applications.**
 `Sources/App/ShortcutsView.swift` — the recorder prevents Sizeup2 colliding with itself, but binding

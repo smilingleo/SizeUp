@@ -73,6 +73,20 @@ import Carbon.HIToolbox
     #expect(KeyName.of(9999) == "Key 9999")
 }
 
+/// The version of the above that actually earns its doc comment.
+///
+/// `KeyName.of` takes a `UInt32` but `UCKeyTranslate` takes a `UInt16`, and
+/// `UInt16(_:)` *traps* rather than failing. 9999 fits, so the test above proved
+/// only that unmapped codes are named — not that `of` is total, which is what it
+/// claimed. It is reachable: `{"keyCode": 70000}` in a hand-edited settings file
+/// reaches here through the status menu, which names every shortcut as it is
+/// built, and killed the app on every launch. Measured before fixing:
+/// "Fatal error: Not enough bits to represent the passed value".
+@Test func aKeyCodeTooLargeForTheTranslationAPIIsNamedRatherThanFatal() {
+    #expect(KeyName.of(70_000) == "Key 70000")
+    #expect(KeyName.of(UInt32.max) == "Key 4294967295")
+}
+
 /// Pins the exact strings the shipped defaults must continue to display,
 /// independent of any refactor to how `keyName` is produced internally.
 @Test func displayStringForShippedDefaultsReadsExactlyAsBefore() {

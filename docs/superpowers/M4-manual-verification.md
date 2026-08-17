@@ -72,6 +72,29 @@ This is the point of the milestone. If any of these fail, the rest does not matt
 - [ ] Hand-edit an override to `"action": "nonsense.thing"`. It is ignored, the app starts normally, and
       every real shortcut still works.
 
+## 5b. Things that were actually broken, and are the reason this section exists
+
+Each of these was found by the final review and fixed. They are worth re-checking by hand because every
+one of them is invisible until you hit it.
+
+- [ ] Hand-edit an override to `"keyCode": 70000` and relaunch. The app **starts**, and that action keeps
+      its default. A virtual key code is 16-bit and the conversion for the key-naming API *traps*, so
+      this aborted the app on every launch while the status menu was being built — unrecoverable without
+      editing the file back by hand.
+- [ ] Click Record, then click another application (or ⌘-Tab away). Recording must **cancel**. Then
+      press ⌃⌥⌘←: it must work. Recording releases every hotkey, and there was no exit on losing focus,
+      so the app was left completely dead with a forgotten "Press keys…" in a window behind something.
+- [ ] Click Record, then — without pressing a key — switch to the General tab and change a gap. The
+      recorder must stay armed and no window must move. Saving re-registers the hotkeys, which used to
+      re-arm them underneath the live recorder.
+- [ ] Launch **without** granting Accessibility and open the menu. It must show your real shortcuts, and
+      `(no shortcut)` for anything you unbound. The keymap was resolved only inside the
+      permission-gated registration, so the menu confidently listed the defaults instead.
+- [ ] With Settings open on the Shortcuts tab, run the SizeUp import. The rows must **update in place**.
+- [ ] Hand-edit two actions onto one key — `center` with `"keyCode": 44, "modifierFlags": 1835008`, which
+      is Snap Back's — and open the Shortcuts tab. An orange line at the top must name both actions and
+      say the loser was unbound. The explanation was being computed and thrown away.
+
 ## 6. Known and deliberate
 
 - **Open at Login is still greyed out.** Ad-hoc signing; unrelated to this milestone. Add Sizeup2 under

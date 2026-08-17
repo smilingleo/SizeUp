@@ -154,3 +154,35 @@ private var fixtureURL: URL {
     #expect(url.pathComponents.contains("Preferences"))
     #expect(url.lastPathComponent.hasSuffix(".plist"))
 }
+
+/// The importer iterated a dictionary, so the order of `overrides` — and hence of
+/// the array written into settings.json — varied between runs. Nothing broke, but
+/// a file that reshuffles itself for no reason is hostile to read and to diff.
+///
+/// This has to pin the concrete expected order. Swift seeds its hashing per
+/// process, so dictionary iteration is stable *within* a run and varies only
+/// between runs: comparing two reads in one process would pass either way. Before
+/// the fix this assertion failed intermittently from one `swift test` to the
+/// next, which is exactly the symptom.
+@Test func importedOverridesAreOrderedByTheirSizeUpKeyRatherThanByHashOrder() {
+    let actions = SizeUpImporter.read(at: fixtureURL).overrides.map(\.action)
+    #expect(actions == [
+        "center",             // Center
+        "half.bottom",        // Down
+        "fullScreen",         // Full Screen
+        "half.left",          // Left
+        "quarter.lowerLeft",  // Lower Left
+        "quarter.lowerRight", // Lower Right
+        "display.next",       // Next Monitor
+        "display.previous",   // Prev Monitor
+        "half.right",         // Right
+        "snapBack",           // SnapBack
+        "space.above",        // Space Above
+        "space.below",        // Space Below
+        "space.next",         // Space Next
+        "space.previous",     // Space Prev
+        "half.top",           // Up
+        "quarter.upperLeft",  // Upper Left
+        "quarter.upperRight", // Upper Right
+    ])
+}

@@ -30,8 +30,9 @@ public struct ShortcutSetting: Codable, Equatable, Sendable {
     /// `modifierFlags` happens to be 0 would make the unbind un-persistable.
     public var resolved: (action: Action, keyCode: UInt32?, modifierFlags: UInt)? {
         guard let action = ActionIdentifier.action(for: action) else { return nil }
-        if keyCode != nil, !ActionIdentifier.hasRealModifier(modifierFlags) {
-            return nil
+        if let keyCode {
+            guard keyCode <= ActionIdentifier.maximumKeyCode else { return nil }
+            guard ActionIdentifier.hasRealModifier(modifierFlags) else { return nil }
         }
         return (action, keyCode, modifierFlags)
     }
@@ -111,7 +112,16 @@ public enum ActionIdentifier {
     static let option: UInt = 1 << 19
     static let command: UInt = 1 << 20
 
-    fileprivate static func hasRealModifier(_ flags: UInt) -> Bool {
+    /// Public so the shortcut recorder can apply the same rule it will be
+    /// judged by. A second, private copy in the UI meant the recorder could
+    /// accept a chord this type would then discard on the next load — a
+    /// shortcut that works until relaunch and then silently does not.
+    public static func hasRealModifier(_ flags: UInt) -> Bool {
         flags & (control | option | command) != 0
     }
+
+    /// Virtual key codes are 16-bit. Anything larger cannot be a real key, and
+    /// converting it for `UCKeyTranslate` traps rather than failing, so it is
+    /// rejected at the boundary as well as guarded where it is used.
+    static let maximumKeyCode = UInt32(UInt16.max)
 }
