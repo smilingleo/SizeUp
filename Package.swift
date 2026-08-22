@@ -13,7 +13,7 @@ import PackageDescription
 let testing = Target.Dependency.product(name: "Testing", package: "swift-testing")
 
 let package = Package(
-    name: "Sizeup2",
+    name: "ClipShot",
     platforms: [.macOS(.v14)],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-testing.git", from: "0.99.0")

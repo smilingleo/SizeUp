@@ -11,20 +11,68 @@ import Foundation
 @MainActor
 public final class SettingsStore {
     private let url: URL
+    /// The pre-rename location of the same file (the `Sizeup2` directory). Moved
+    /// into `url` by `migrateFromLegacy()` on first launch after the rename, so a
+    /// rename never loses a preference. `nil` (the default, as used by tests) means
+    /// there is no legacy file to migrate.
+    private let legacyURL: URL?
 
     public private(set) var settings: Settings
 
-    public init(url: URL) {
+    public init(url: URL, legacyURL: URL? = nil) {
         self.url = url
+        self.legacyURL = legacyURL
         self.settings = Settings()
     }
 
-    /// `~/Library/Application Support/Sizeup2/settings.json`.
+    /// `~/Library/Application Support/ClipShot/settings.json`.
     public static var defaultURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first ?? FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent("Library/Application Support")
+        return base.appendingPathComponent("ClipShot").appendingPathComponent("settings.json")
+    }
+
+    /// The pre-rename location: `~/Library/Application Support/Sizeup2/settings.json`.
+    public static var legacyDefaultURL: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first ?? FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support")
         return base.appendingPathComponent("Sizeup2").appendingPathComponent("settings.json")
+    }
+
+    /// Moves the pre-rename settings file into `url` at launch.
+    ///
+    /// Never overwrites: if `url` already exists, the legacy file (if any) is left
+    /// in place and logged, because a second copy is recoverable and a destroyed
+    /// original is not. With no legacy file — a fresh install, or a user who never
+    /// ran under the old name — this is a no-op. Best-effort: a failure to move logs
+    /// rather than throws, so the rename can never prevent launch.
+    public func migrateFromLegacy() {
+        guard let legacyURL else { return }
+        let fileManager = FileManager.default
+        guard !fileManager.fileExists(atPath: url.path) else {
+            if fileManager.fileExists(atPath: legacyURL.path) {
+                NSLog(
+                    "ClipShot: settings already present at \(url.path); leaving the legacy "
+                    + "copy at \(legacyURL.path) for you to remove."
+                )
+            }
+            return
+        }
+        guard fileManager.fileExists(atPath: legacyURL.path) else { return }
+        do {
+            try fileManager.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try fileManager.moveItem(at: legacyURL, to: url)
+        } catch {
+            NSLog(
+                "ClipShot: could not migrate legacy settings from \(legacyURL.path): "
+                + "\(error.localizedDescription)"
+            )
+        }
     }
 
     /// Total: never throws, never crashes. A missing file, an unreadable

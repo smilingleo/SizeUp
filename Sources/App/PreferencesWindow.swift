@@ -67,7 +67,7 @@ final class PreferencesWindow: NSObject {
             rootView: PreferencesTabs(general: viewModel, shortcuts: shortcuts)
         )
         let newWindow = NSWindow(contentViewController: hostingController)
-        newWindow.title = "Sizeup2 Settings"
+        newWindow.title = "ClipShot Settings"
         // Resizable after all: the skip list grows with however many apps the
         // user adds, and a fixed height either clips it or wastes space. The
         // form's own width is fixed in the view, so only height really varies.
@@ -93,7 +93,7 @@ final class PreferencesWindow: NSObject {
         // behaviour itself:
         // AppDelegate never implements
         // `applicationShouldTerminateAfterLastWindowClosed`, and that
-        // method's default is `false`. Sizeup2 is a menu-bar app with no
+        // method's default is `false`. ClipShot is a menu-bar app with no
         // other windows, so relying on the default (rather than adding a
         // redundant override here) is correct and keeps the "do not
         // terminate on close" requirement satisfied at the one place it

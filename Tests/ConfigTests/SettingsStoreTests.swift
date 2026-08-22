@@ -143,12 +143,96 @@ private func makeTempDirectory() -> URL {
     #expect(text.contains("\n"))
 }
 
-@Test @MainActor func defaultURLEndsInSettingsJSONUnderSizeup2() {
+@Test @MainActor func defaultURLEndsInSettingsJSONUnderClipShot() {
     // Cannot assert the real path without touching the user's home
     // directory, so this only checks shape, and never writes to it.
     let url = SettingsStore.defaultURL
     #expect(url.lastPathComponent == "settings.json")
+    #expect(url.pathComponents.contains("ClipShot"))
+}
+
+@Test @MainActor func legacyDefaultURLPointsAtTheOldSizeup2Directory() {
+    // The pre-rename location, asserted separately from `defaultURL` so a
+    // change to either name is caught on its own.
+    let url = SettingsStore.legacyDefaultURL
+    #expect(url.lastPathComponent == "settings.json")
     #expect(url.pathComponents.contains("Sizeup2"))
+    // The two directories are siblings under Application Support: the
+    // migration is a move within one folder, never across a volume. Compare the
+    // grandparent, not the directories themselves, which differ by design.
+    #expect(url.deletingLastPathComponent().deletingLastPathComponent()
+        == SettingsStore.defaultURL.deletingLastPathComponent().deletingLastPathComponent())
+}
+
+@Test @MainActor func migrationMovesTheLegacyFileIntoTheNewLocation() throws {
+    let dir = makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let legacyURL = dir.appendingPathComponent("Sizeup2").appendingPathComponent("settings.json")
+    let newURL = dir.appendingPathComponent("ClipShot").appendingPathComponent("settings.json")
+    try FileManager.default.createDirectory(at: legacyURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let marker = Settings(gaps: GapSettings(inner: 7, outer: 3))
+    let writer = SettingsStore(url: legacyURL)
+    try writer.save(marker)
+
+    let store = SettingsStore(url: newURL, legacyURL: legacyURL)
+    store.migrateFromLegacy()
+
+    #expect(FileManager.default.fileExists(atPath: newURL.path))
+    #expect(!FileManager.default.fileExists(atPath: legacyURL.path))
+    let reader = SettingsStore(url: newURL)
+    reader.load()
+    // The rename must carry the exact preferences forward, not reset them.
+    #expect(reader.settings == marker)
+}
+
+@Test @MainActor func migrationNeverOverwritesAnExistingNewFile() throws {
+    let dir = makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let legacyURL = dir.appendingPathComponent("Sizeup2").appendingPathComponent("settings.json")
+    let newURL = dir.appendingPathComponent("ClipShot").appendingPathComponent("settings.json")
+
+    let legacy = Settings(gaps: GapSettings(inner: 99, outer: 99))
+    let current = Settings(gaps: GapSettings(inner: 1, outer: 1))
+    for (url, value) in [(legacyURL, legacy), (newURL, current)] {
+        let s = SettingsStore(url: url)
+        try s.save(value)
+    }
+
+    let store = SettingsStore(url: newURL, legacyURL: legacyURL)
+    store.migrateFromLegacy()
+
+    // A second copy is recoverable; a destroyed original is not. So the new
+    // file is untouched and the legacy file is left in place.
+    let reader = SettingsStore(url: newURL)
+    reader.load()
+    #expect(reader.settings == current)
+    #expect(FileManager.default.fileExists(atPath: legacyURL.path))
+}
+
+@Test @MainActor func migrationWithNoLegacyFileIsANoOp() throws {
+    let dir = makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let newURL = dir.appendingPathComponent("ClipShot").appendingPathComponent("settings.json")
+    let legacyURL = dir.appendingPathComponent("Sizeup2").appendingPathComponent("settings.json")
+
+    let store = SettingsStore(url: newURL, legacyURL: legacyURL)
+    store.migrateFromLegacy()
+
+    // Nothing is created: neither file, and — critically — not even the
+    // legacy directory, which must not be conjured just to be moved.
+    #expect(!FileManager.default.fileExists(atPath: newURL.path))
+    #expect(!FileManager.default.fileExists(atPath: legacyURL.path))
+}
+
+@Test @MainActor func aStoreWithNoLegacyURLNeverTouchesAFolder() {
+    // The default (no legacy URL) is what tests use; it must not reference any
+    // real path at all, so this just confirms the seam is inert.
+    let dir = makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let url = dir.appendingPathComponent("settings.json")
+    let store = SettingsStore(url: url)
+    store.migrateFromLegacy()
+    #expect(!FileManager.default.fileExists(atPath: url.path))
 }
 
 @Test @MainActor func aFailedSaveLeavesThePreviousFileIntact() throws {

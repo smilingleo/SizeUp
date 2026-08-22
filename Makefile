@@ -13,14 +13,14 @@ build:
 
 # Build, install to /Applications, and restart the app.
 dev: build
-	- pkill -x Sizeup2 || true
-	rm -rf /Applications/Sizeup2.app
-	cp -R build/Sizeup2.app /Applications/
-	open /Applications/Sizeup2.app
+	- pkill -x ClipShot || true
+	rm -rf /Applications/ClipShot.app
+	cp -R build/ClipShot.app /Applications/
+	open /Applications/ClipShot.app
 
 run: build
-	- pkill -x Sizeup2 || true
-	open build/Sizeup2.app
+	- pkill -x ClipShot || true
+	open build/ClipShot.app
 
 clean:
 	swift package clean

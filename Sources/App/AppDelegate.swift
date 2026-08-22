@@ -9,7 +9,12 @@ import WindowKit
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let hotkeys = HotkeyManager()
     private let store = WindowStateStore()
-    private let settings = SettingsStore(url: SettingsStore.defaultURL)
+    // `legacyURL` is the pre-rename location. `migrateFromLegacy()` moves it in at
+    // launch, so a rename never loses a preference; then `load()` reads the new spot.
+    private let settings = SettingsStore(
+        url: SettingsStore.defaultURL,
+        legacyURL: SettingsStore.legacyDefaultURL
+    )
     private var statusItem: NSStatusItem?
     /// Held so `menuNeedsUpdate` can refresh it without rebuilding the menu.
     private weak var launchAtLoginItem: NSMenuItem?
@@ -27,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        settings.migrateFromLegacy()
         settings.load()
         rebuildRouter()
         // Before the status item is built, and independently of whether
@@ -179,10 +185,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func makeStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = NSImage(
-            systemSymbolName: "rectangle.split.2x1",
-            accessibilityDescription: "Sizeup2"
-        )
+        item.button?.image = statusIconImage(hasProblem: false)
         statusItem = item
         rebuildMenu()
     }
@@ -193,14 +196,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// own icon switches to a warning symbol.
     private func updateStatusIcon() {
         let hasProblem = !hotkeys.registrationFailures.isEmpty || hotkeys.handlerInstallFailed
-        let symbolName = hasProblem ? "exclamationmark.triangle" : "rectangle.split.2x1"
         let description = hasProblem
-            ? "Sizeup2 (a shortcut could not be claimed)"
-            : "Sizeup2"
-        statusItem?.button?.image = NSImage(
-            systemSymbolName: symbolName,
-            accessibilityDescription: description
-        )
+            ? "ClipShot (a shortcut could not be claimed)"
+            : "ClipShot"
+        statusItem?.button?.image = statusIconImage(hasProblem: hasProblem, description: description)
+    }
+
+    /// The menu-bar image. The normal state is ClipShot's own template asset;
+    /// the problem state is a system warning symbol (assets cannot be tinted a
+    /// different *state*, and a template asset that turns into a triangle is
+    /// the clearest "something broke" signal). A missing asset falls back to
+    /// the old split-rectangle symbol so the icon is never blank.
+    private func statusIconImage(hasProblem: Bool, description: String = "ClipShot") -> NSImage? {
+        if hasProblem {
+            return NSImage(
+                systemSymbolName: "exclamationmark.triangle",
+                accessibilityDescription: description
+            )
+        }
+        if let asset = Self.bundleTemplateIcon(named: "statusbar_icon") {
+            asset.accessibilityDescription = description
+            return asset
+        }
+        return NSImage(systemSymbolName: "rectangle.split.2x1", accessibilityDescription: description)
+    }
+
+    /// Loads a bundled PNG as a 21×21 template image. `nil` if the asset is
+    /// absent (the caller then falls back to a system symbol).
+    private static func bundleTemplateIcon(named name: String) -> NSImage? {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "png"),
+              let image = NSImage(contentsOf: url)
+        else { return nil }
+        image.size = NSSize(width: 21, height: 21)
+        image.isTemplate = true
+        return image
     }
 
     private func rebuildMenu() {
@@ -264,7 +293,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if case .space = action, !spaces.isAvailable {
                 item.title += "  (unavailable on this macOS)"
                 item.toolTip =
-                    "Sizeup2 moves windows between Spaces using a private system interface "
+                    "ClipShot moves windows between Spaces using a private system interface "
                     + "that this version of macOS does not provide."
             }
             menu.addItem(item)
@@ -315,7 +344,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         launchAtLoginItem = launch
         refreshLaunchAtLoginItem()
 
-        let quit = NSMenuItem(title: "Quit Sizeup2", action: #selector(quit), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "Quit ClipShot", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
 
@@ -374,9 +403,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let confirm = NSAlert()
         confirm.messageText = "Import \(result.overrides.count) shortcuts from SizeUp?"
         confirm.informativeText =
-            "This replaces every shortcut currently set in Sizeup2. "
+            "This replaces every shortcut currently set in ClipShot. "
             + "You can undo it with Restore Defaults in Settings, "
-            + "which returns to Sizeup2's own defaults rather than to whatever you had before."
+            + "which returns to ClipShot's own defaults rather than to whatever you had before."
         confirm.addButton(withTitle: "Import")
         confirm.addButton(withTitle: "Cancel")
         guard confirm.runModal() == .alertFirstButtonReturn else { return }
@@ -388,7 +417,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             registerHotkeys()
             preferencesWindow?.refresh()
             outcome.messageText = "Imported \(result.overrides.count) shortcuts"
-            var detail = "Sizeup2 is now using SizeUp's shortcuts."
+            var detail = "ClipShot is now using SizeUp's shortcuts."
             if !result.skipped.isEmpty {
                 // Naming them, because a partial import that looks total is how a
                 // user ends up pressing a key that will never work again.
@@ -465,7 +494,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // Kept so the next menu build can show it. An NSLog-only failure is
             // invisible in a menu-bar app with no window.
             lastLaunchAtLoginError = error.localizedDescription
-            NSLog("Sizeup2: could not change the login item: \(error.localizedDescription)")
+            NSLog("ClipShot: could not change the login item: \(error.localizedDescription)")
         }
         // Rebuild so the checkmark reflects what the system actually did, not
         // what we asked for.
