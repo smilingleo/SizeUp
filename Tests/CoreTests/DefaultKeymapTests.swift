@@ -34,16 +34,49 @@ import Hotkeys
         (Shortcut(keyCode: KeyCode.leftArrow, modifierFlags: ctrlCmd), .space(.previous)),
     ]
 
-    #expect(DefaultKeymap.bindings.count == expected.count)
-    for (want, got) in zip(expected, DefaultKeymap.bindings) {
+    // The capture actions were merged into this keymap (C1) and sit ahead of
+    // the window bindings, so compare the window bindings as a set, not the
+    // whole list: the user's SizeUp configuration must all be present and
+    // intact, regardless of where the capture entries were placed.
+    // The three capture actions are the only ones the capture merge added;
+    // everything else is the original window keymap.
+    let captureActions: [Action] = [.captureScreenshot, .startRecording, .toggleScrollCapture]
+    let windowBindings = DefaultKeymap.bindings.filter { !captureActions.contains($0.1) }
+    #expect(windowBindings.count == expected.count)
+    for (want, got) in zip(expected, windowBindings) {
         #expect(want.0 == got.0)
         #expect(want.1 == got.1)
     }
+    #expect(DefaultKeymap.bindings.count == expected.count + 3) // + the three capture actions
 }
 
 @Test func allShortcutsAreUnique() {
     let shortcuts = DefaultKeymap.bindings.map(\.0)
     #expect(Set(shortcuts).count == shortcuts.count)
+}
+
+@Test func theThreeCaptureDefaultsMatchClipShot() {
+    // The standalone ClipShot defaults, verbatim: control+command (1_310_720,
+    // the same mask as the Space moves) over A / Z / S. These are the
+    // user-facing capture shortcuts, so the test pins the exact values rather
+    // than re-deriving them from the (possibly edited) keymap.
+    let ctrlCmd: UInt = 1_310_720
+    func shortcut(for action: Action) -> Shortcut? {
+        DefaultKeymap.bindings.first { $0.1 == action }?.0
+    }
+
+    #expect(shortcut(for: .captureScreenshot)
+        == Shortcut(keyCode: 0, modifierFlags: ctrlCmd))   // A
+    #expect(shortcut(for: .startRecording)
+        == Shortcut(keyCode: 6, modifierFlags: ctrlCmd))   // Z
+    #expect(shortcut(for: .toggleScrollCapture)
+        == Shortcut(keyCode: 1, modifierFlags: ctrlCmd))   // S
+}
+
+@Test func theCaptureActionsHaveDistinctLabels() {
+    #expect(DefaultKeymap.title(for: .captureScreenshot) == "Screenshot")
+    #expect(DefaultKeymap.title(for: .startRecording) == "Record Screen")
+    #expect(DefaultKeymap.title(for: .toggleScrollCapture) == "Scroll Capture")
 }
 
 @Test func bindsDisplayMovesToControlOptionArrows() {

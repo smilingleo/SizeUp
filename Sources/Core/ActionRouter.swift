@@ -103,6 +103,14 @@ public struct ActionRouter {
             guard let achieved = window.setFrame(target) else { return }
             store.record(key: window.key, action: action,
                          achievedFrame: achieved, previousFrame: current)
+
+        // Capture actions are handled by `App` (the capture session), never by
+        // the router. `AppDelegate` dispatches them before calling `perform`,
+        // so this arm is unreachable in practice; it exists only to keep the
+        // switch exhaustive without a `default:` that would swallow them. It
+        // must stay a no-op: a capture action must never touch a window frame.
+        case .captureScreenshot, .startRecording, .toggleScrollCapture:
+            return
         }
     }
 

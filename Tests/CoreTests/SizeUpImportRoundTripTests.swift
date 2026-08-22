@@ -50,7 +50,7 @@ struct SizeUpImportRoundTripTests {
 
         let resolved = KeymapResolver.resolve(overrides: overrides(from: imported.overrides)).bindings
 
-        #expect(DefaultKeymap.bindings.count == 15)
+        #expect(DefaultKeymap.bindings.count == 18) // 15 window + 3 capture (the merge)
 
         for (defaultShortcut, action) in DefaultKeymap.bindings {
             let binding = try #require(resolved.first { $0.action == action })
