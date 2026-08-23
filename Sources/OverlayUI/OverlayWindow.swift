@@ -186,8 +186,16 @@ public final class OverlayView: NSView {
 
         // 1. The screenshot, scaled to fill the view (it covers all of it:
         //    the window frame is the display and both are in points).
+        //
+        // Use the one-argument `draw(in:)` — the same call Rust's `drawInRect:`
+        // makes. It is the only NSImage draw that compensates for a flipped
+        // view. The `draw(in:from:operation:fraction:)` variant and
+        // `CGContext.draw(_:in:)` both render upside down in a flipped view,
+        // which mirrored the whole overlay (and so mirrored the copied crop,
+        // because the selection is taken in the coordinates the user sees).
+        // `orientationIsUpright` pins this.
         NSGraphicsContext.saveGraphicsState()
-        screenshot.draw(in: boundsRect, from: .zero, operation: .copy, fraction: 1)
+        screenshot.draw(in: boundsRect)
         NSGraphicsContext.restoreGraphicsState()
 
         guard let sel = selection else {

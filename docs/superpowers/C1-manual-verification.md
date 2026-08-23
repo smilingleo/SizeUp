@@ -52,6 +52,12 @@ result, and (where it matters) what to compare against the Rust app.
 
 - [ ] **⌃⌘A** dims the **display under the cursor** (in a two-display setup, the
       overlay appears on the correct display, not always the main one).
+- [ ] **The overlay is not upside down.** The dimmed screen matches the real
+      screen (check something asymmetric — the Dock, the menu bar). A flipped
+      view mirrors an `NSImage` unless it is drawn with the one-argument
+      `draw(in:)`; when it mirrors, the crop is mirrored too, because the
+      selection is taken in the coordinates you see. `orientationIsUpright`
+      pins it, but eyeball it once.
 - [ ] **Drag** draws a dashed selection; the complement is dimmed; a size badge
       shows the **pixel** dimensions (scale factor honored — on a 2× Retina
       display a 500-pt selection reads ~1000 px).
