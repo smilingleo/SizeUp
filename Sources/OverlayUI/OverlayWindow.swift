@@ -18,6 +18,8 @@ public protocol OverlayViewDelegate: AnyObject {
     func overlayViewDidDismiss(_ view: OverlayView)
     /// Return was pressed: the user confirmed the selection.
     func overlayViewDidConfirm(_ view: OverlayView)
+    /// ⌘S was pressed: save the selection to a file.
+    func overlayViewDidSave(_ view: OverlayView)
 }
 
 /// The capture canvas: the screenshot as background, a darkened complement,
@@ -146,6 +148,8 @@ public final class OverlayView: NSView {
             delegate?.overlayViewDidDismiss(self)
         case 36, 76: // Return / Enter
             delegate?.overlayViewDidConfirm(self)
+        case 1 where event.modifierFlags.contains(.command): // ⌘S: save
+            delegate?.overlayViewDidSave(self)
         default:
             super.keyDown(with: event)
         }

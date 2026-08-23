@@ -55,4 +55,15 @@ public enum Action: Sendable, Equatable {
              .toggleScrollCapture: return false
         }
     }
+
+    /// True for the three capture actions. `App` routes them to the capture
+    /// session (region overlay / recording) rather than the window router, which
+    /// has no frame math for them.
+    public var isCapture: Bool {
+        switch self {
+        case .captureScreenshot, .startRecording, .toggleScrollCapture: return true
+        case .half, .quarter, .center, .fullScreen, .snapBack, .display, .space:
+            return false
+        }
+    }
 }

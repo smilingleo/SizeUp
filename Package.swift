@@ -49,6 +49,11 @@ let package = Package(
         // still does not depend on Config — this edge is the test target's alone.
         .testTarget(name: "CoreTests", dependencies: ["Core", "Geometry", "WindowKit", "Hotkeys", "Config", testing]),
         .testTarget(name: "ConfigTests", dependencies: ["Config", "Geometry", testing]),
+        // The executable is testable so `CaptureSessionTests` (Task 5) can drive the
+        // state machine with fakes; the AppKit shell itself is covered by the manual
+        // checklist. It depends on the whole feature surface because a capture flow
+        // touches capture, annotation, and the overlay at once.
+        .testTarget(name: "AppTests", dependencies: ["App", "Core", "Geometry", "Capture", "Annotation", "OverlayUI", testing]),
     ],
     swiftLanguageModes: [.v6]
 )
