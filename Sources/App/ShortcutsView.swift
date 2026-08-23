@@ -5,19 +5,27 @@ import Geometry
 import Hotkeys
 import SwiftUI
 
-/// The Preferences window's two tabs.
+/// The Preferences window's three tabs.
 ///
-/// A separate type rather than adding a case to `PreferencesView` because
-/// `PreferencesView` is out of bounds for this task (house rule 3) — this
-/// only composes it with the new shortcuts tab.
+/// **General** — app-level: login item, both permissions, the capture toggles
+/// (the redesigned Tab 1). **Window** — the window-manager settings that
+/// used to live in "General" (gaps, spaces, cycling, skip list); renamed to
+/// "Window" because "General" now means the app-level tab. **Shortcuts** — the
+/// unified recorder for all 18 bound actions.
+///
+/// A separate type rather than adding a case to `PreferencesView` because that
+/// view is the *Window* tab's content; `PreferencesTabs` composes the three.
 struct PreferencesTabs: View {
-    @Bindable var general: PreferencesViewModel
+    @Bindable var general: GeneralViewModel
+    @Bindable var window: PreferencesViewModel
     @Bindable var shortcuts: ShortcutsViewModel
 
     var body: some View {
         TabView {
-            PreferencesView(viewModel: general)
+            GeneralView(viewModel: general)
                 .tabItem { Text("General") }
+            PreferencesView(viewModel: window)
+                .tabItem { Text("Window") }
             ShortcutsView(viewModel: shortcuts)
                 .tabItem { Text("Shortcuts") }
         }
@@ -49,6 +57,13 @@ final class ShortcutsViewModel {
     private let onRecordingChange: (Bool) -> Void
 
     private(set) var rows: [ShortcutRow] = []
+
+    /// The 18 bound actions in their two display sections, in `DefaultKeymap`
+    /// order: the three capture actions, then the fifteen window actions.
+    /// Split on `Action.isCapture` rather than position so the grouping holds
+    /// if the keymap order is ever changed.
+    var captureRows: [ShortcutRow] { rows.filter { $0.action.isCapture } }
+    var windowRows: [ShortcutRow] { rows.filter { !$0.action.isCapture } }
     /// The action whose row is showing "Press keys…". `nil` when nothing is
     /// recording, which the view uses to disable every other row's buttons —
     /// two recordings at once would each install a monitor and both never end
@@ -249,6 +264,82 @@ final class ShortcutsViewModel {
         coreOverrides(from: store.settings)
     }
 
+    // MARK: Shortcut importers (moved here from the menu in the redesign)
+
+    /// Whether each importer has anything to read, for the button disabled +
+    /// tooltip states. A checked file that parses empty still offers the
+    /// import (it reports "nothing to import") — but a *missing* file means the
+    /// button is disabled with a tooltip, the way the old menu item did.
+    var sizeUpPresent: Bool {
+        FileManager.default.fileExists(atPath: SizeUpImporter.defaultURL.path)
+    }
+    var clipShotPresent: Bool {
+        FileManager.default.fileExists(atPath: ClipShotImporter.defaultURL.path)
+    }
+
+    /// The tooltip explaining why an import button is disabled. Kept on the
+    /// model (not the view) because it names a file path — the view would have
+    /// to import `Config`'s importers just to build a string, and a ternary
+    /// `nil` in the view body does not type-check against SwiftUI's `help`.
+    var sizeUpTooltip: String? {
+        sizeUpPresent ? nil : "No SizeUp preferences found at \(SizeUpImporter.defaultURL.path)"
+    }
+    var clipShotTooltip: String? {
+        clipShotPresent ? nil : "No ClipShot config found at \(ClipShotImporter.defaultURL.path)"
+    }
+
+    func importFromSizeUp() {
+        let result = SizeUpImporter.read(at: SizeUpImporter.defaultURL)
+        performImport(result.overrides, skipped: result.skipped, source: "SizeUp")
+    }
+
+    func importFromClipShot() {
+        let result = ClipShotImporter.read(at: ClipShotImporter.defaultURL)
+        performImport(result.overrides, skipped: result.skipped, source: "ClipShot")
+    }
+
+    /// The shared confirm → import → report flow. Both importers replace *all*
+    /// shortcut overrides, so both carry the same destructive-action treatment
+    /// the SizeUp import always had: a confirm that says so, and a report that
+    /// names what was imported and what was skipped.
+    private func performImport(
+        _ overrides: [ShortcutSetting],
+        skipped: [String],
+        source: String
+    ) {
+        guard !overrides.isEmpty else {
+            let empty = NSAlert()
+            empty.messageText = "Nothing to import"
+            empty.informativeText = source + "'s preferences were found but contain no shortcuts."
+            empty.runModal()
+            return
+        }
+
+        let confirm = NSAlert()
+        confirm.messageText =
+            "Import \(overrides.count) shortcut\(overrides.count == 1 ? "" : "s") from \(source)?"
+        confirm.informativeText =
+            "This replaces every shortcut currently set in ClipShot. "
+            + "You can undo it with Restore Defaults, which returns to ClipShot's own defaults."
+        confirm.addButton(withTitle: "Import")
+        confirm.addButton(withTitle: "Cancel")
+        guard confirm.runModal() == .alertFirstButtonReturn else { return }
+
+        do {
+            try store.update { $0.shortcutOverrides = overrides }
+            adopt(store.settings)
+            onChange()
+            let outcome = NSAlert()
+            outcome.messageText = "Imported \(overrides.count) shortcut\(overrides.count == 1 ? "" : "s") from \(source)"
+            outcome.informativeText = skipped.isEmpty
+                ? source + "'s shortcuts are now in use."
+                : "Skipped \(skipped.joined(separator: ", ")): unreadable or invalid."
+            outcome.runModal()
+        } catch {
+            errorMessage = "Couldn't save the imported shortcuts: \(error.localizedDescription)"
+        }
+    }
+
     private func save(_ overrides: [Core.ShortcutOverride]) {
         do {
             try store.update {
@@ -318,14 +409,31 @@ struct ShortcutsView: View {
                     Text(errorMessage).foregroundStyle(.red)
                 }
             }
-            Section("Shortcuts") {
-                ForEach(viewModel.rows) { row in
+            Section("Capture") {
+                ForEach(viewModel.captureRows) { row in
+                    shortcutRow(row)
+                }
+            }
+            Section("Window") {
+                ForEach(viewModel.windowRows) { row in
                     shortcutRow(row)
                 }
             }
             Section {
                 Button("Restore Defaults") { viewModel.restoreDefaults() }
                     .disabled(viewModel.recordingAction != nil)
+            }
+            // Both importers moved here from the menu in the redesign: the
+            // menu's job is invoking actions, configuration lives in one place.
+            // Each is disabled + explained when its source file is absent, the
+            // way the old SizeUp menu item did.
+            Section("Import Shortcuts") {
+                Button("Import Shortcuts from SizeUp…") { viewModel.importFromSizeUp() }
+                    .disabled(!viewModel.sizeUpPresent)
+                    .help(viewModel.sizeUpTooltip ?? "")
+                Button("Import Shortcuts from ClipShot…") { viewModel.importFromClipShot() }
+                    .disabled(!viewModel.clipShotPresent)
+                    .help(viewModel.clipShotTooltip ?? "")
             }
         }
         .formStyle(.grouped)

@@ -61,6 +61,43 @@ public struct SpanSetting: Sendable, Equatable, Codable {
     }
 }
 
+/// The capture side of the settings file.
+///
+/// Two recording knobs, both defaulting on to match ClipShot's shipped
+/// behaviour. These take effect from the next recording (C3); in C1 they are
+/// persisted and displayed but not yet consumed — the honest "wired to no-op
+/// until C3" the design specifies for the capture toggles.
+///
+/// Stored under `capture` as a nested object. `decodeIfPresent` (below) means
+/// an existing settings file without the key — including the one migrated from
+/// `Sizeup2/` at the rename — decodes to "both on" and is never touched on a
+/// save that leaves it alone, so the rename and the new feature cannot rewrite
+/// a file the user has hand-edited.
+public struct CaptureSettings: Sendable, Equatable, Codable {
+    public var showCursorInRecordings: Bool
+    public var showClickRipples: Bool
+
+    public init(
+        showCursorInRecordings: Bool = true,
+        showClickRipples: Bool = true
+    ) {
+        self.showCursorInRecordings = showCursorInRecordings
+        self.showClickRipples = showClickRipples
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        showCursorInRecordings =
+            try container.decodeIfPresent(Bool.self, forKey: .showCursorInRecordings) ?? true
+        showClickRipples =
+            try container.decodeIfPresent(Bool.self, forKey: .showClickRipples) ?? true
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case showCursorInRecordings, showClickRipples
+    }
+}
+
 /// The user's persisted configuration.
 ///
 /// `Settings()` must reproduce the behaviour `AppDelegate` hardcodes today
@@ -83,19 +120,23 @@ public struct Settings: Sendable, Equatable, Codable {
     /// the resolved keymap instead would silently orphan a future version's
     /// new actions.
     public var shortcutOverrides: [ShortcutSetting]
+    /// The capture-side recording knobs (C1 persists + displays; C3 consumes).
+    public var capture: CaptureSettings
 
     public init(
         gaps: GapSettings = GapSettings(),
         cycle: [SpanSetting] = [SpanSetting(occupied: 1, columns: 2)],
         skippedBundleIdentifiers: [String] = [],
         shortcutOverrides: [ShortcutSetting] = [],
-        followsWindowToSpace: Bool = true
+        followsWindowToSpace: Bool = true,
+        capture: CaptureSettings = CaptureSettings()
     ) {
         self.gaps = gaps
         self.cycle = cycle
         self.skippedBundleIdentifiers = skippedBundleIdentifiers
         self.shortcutOverrides = shortcutOverrides
         self.followsWindowToSpace = followsWindowToSpace
+        self.capture = capture
     }
 
     /// A synthesized `Codable` throws on a missing key, and a settings file
@@ -117,10 +158,16 @@ public struct Settings: Sendable, Equatable, Codable {
         followsWindowToSpace =
             try container.decodeIfPresent(Bool.self, forKey: .followsWindowToSpace)
                 ?? defaults.followsWindowToSpace
+        // Absent key → both on. A save that never changes `capture` writes the
+        // defaults back exactly, so the migrated file stays byte-for-byte as it
+        // was.
+        capture = try container.decodeIfPresent(CaptureSettings.self, forKey: .capture)
+            ?? defaults.capture
     }
 
     private enum CodingKeys: String, CodingKey {
-        case gaps, cycle, skippedBundleIdentifiers, shortcutOverrides, followsWindowToSpace
+        case gaps, cycle, skippedBundleIdentifiers, shortcutOverrides, followsWindowToSpace,
+             capture
     }
 
     /// The resolved cycle, with invalid steps dropped and order preserved.

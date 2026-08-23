@@ -19,8 +19,13 @@ final class PreferencesWindow: NSObject {
     /// lost-update bug: whichever saves last wins, silently discarding the
     /// other's edits.
     private var window: NSWindow?
-    /// Held alongside the window so a later showing can refresh it from disk.
-    private var viewModel: PreferencesViewModel?
+    /// The **Window** tab's view model (gaps, spaces, cycling, skip list) —
+    /// the content that used to be the whole "General" tab before the redesign
+    /// split it.
+    private var windowViewModel: PreferencesViewModel?
+    /// The **General** tab's view model (login item, permissions, capture
+    /// toggles).
+    private var generalViewModel: GeneralViewModel?
 
     /// `onChange` is a closure, not a reference to `ActionRouter`, so this
     /// type — and the view model it owns — has no reason to know the router
@@ -48,15 +53,19 @@ final class PreferencesWindow: NSObject {
         if let window {
             // Re-read before showing: the file may have been hand-edited since
             // the last showing, and editing from a stale view model would write
-            // those changes away.
-            viewModel?.reload()
+            // those changes away. The General tab re-reads the *system* too
+            // (permissions, login state), which can change without the file.
+            generalViewModel?.reload()
+            windowViewModel?.reload()
             shortcutsViewModel?.reload()
             window.makeKeyAndOrderFront(nil)
             return
         }
 
-        let viewModel = PreferencesViewModel(store: store, onChange: onChange)
-        self.viewModel = viewModel
+        let general = GeneralViewModel(store: store, onChange: onChange)
+        self.generalViewModel = general
+        let windowVM = PreferencesViewModel(store: store, onChange: onChange)
+        self.windowViewModel = windowVM
         let shortcuts = ShortcutsViewModel(
             store: store,
             onChange: onChange,
@@ -64,7 +73,7 @@ final class PreferencesWindow: NSObject {
         )
         self.shortcutsViewModel = shortcuts
         let hostingController = NSHostingController(
-            rootView: PreferencesTabs(general: viewModel, shortcuts: shortcuts)
+            rootView: PreferencesTabs(general: general, window: windowVM, shortcuts: shortcuts)
         )
         let newWindow = NSWindow(contentViewController: hostingController)
         newWindow.title = "ClipShot Settings"
@@ -136,7 +145,8 @@ extension PreferencesWindow: NSWindowDelegate {
     /// changes; wrong for anybody else's.
     func refresh() {
         guard window != nil else { return }
-        viewModel?.reload()
+        generalViewModel?.reload()
+        windowViewModel?.reload()
         shortcutsViewModel?.reload()
     }
 }
