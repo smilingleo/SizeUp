@@ -1,3 +1,4 @@
+import Annotation
 import AppKit
 import Capture
 import Core
@@ -163,6 +164,9 @@ final class CaptureSession: OverlayViewDelegate {
         return false
     }
 
+    /// The editor toolbar, shown once a region exists.
+    private var toolbar: ToolbarWindow?
+
     private func presentOverlay(on screen: NSScreen) {
         guard let captured else { return }
         if overlayWindow == nil {
@@ -195,15 +199,23 @@ final class CaptureSession: OverlayViewDelegate {
     /// The confirmed selection cropped out of the capture, in pixels. `nil` when
     /// there is no capture/selection or the selection is too small.
     private func cropCurrentSelection() -> CGImage? {
-        guard let captured, let selection = overlayView?.selection else { return nil }
-        guard let cropped = CropImage.crop(captured.image, selection: selection, scale: captured.scale) else {
+        guard let captured, let view = overlayView, let selection = view.selection else { return nil }
+        // Any text still being typed counts as drawn — the user pressing Return
+        // to confirm should not lose the label they just typed.
+        view.endTextEditing()
+        guard let flattened = Compositor.flatten(
+            captured.image, selection: selection, scale: captured.scale,
+            annotations: view.annotations
+        ) else {
             NSLog("ClipShot: selection produced an empty crop")
             return nil
         }
-        return cropped
+        return flattened
     }
 
     private func hideOverlay() {
+        toolbar?.orderOut(nil)
+        toolbar = nil
         overlayWindow?.orderOut(nil)
         overlayWindow = nil
         captured = nil
@@ -214,7 +226,33 @@ final class CaptureSession: OverlayViewDelegate {
     public func overlayView(_ view: OverlayView, didChangeSelection rect: CGRect?) {
         // C1 has no auto-start on selection (that is the recording/scroll
         // behavior, C3/C5). The selection is read at confirm time.
-        _ = rect
+        //
+        // The toolbar appears only once there is a region to annotate: before
+        // that there is nothing for a tool to draw on, and a toolbar floating
+        // over an empty dimmed screen just gets in the way of the first drag.
+        guard let rect, rect.width >= 5, rect.height >= 5 else {
+            toolbar?.orderOut(nil)
+            return
+        }
+        showToolbar(near: rect, view: view)
+    }
+
+    private func showToolbar(near rect: CGRect, view: OverlayView) {
+        if toolbar == nil {
+            let panel = ToolbarWindow()
+            panel.toolbarDelegate = self
+            toolbar = panel
+        }
+        guard let toolbar, let screen = overlayWindow?.screen ?? NSScreen.main else { return }
+        toolbar.sync(with: view.editor)
+        toolbar.position(near: rect, on: screen.frame, viewHeight: view.bounds.height)
+        // `orderFront`, never `makeKey`: the overlay has to keep first
+        // responder or the one-key tool shortcuts and Escape stop working.
+        toolbar.orderFront(nil)
+    }
+
+    public func overlayViewDidChangeEditor(_ view: OverlayView) {
+        toolbar?.sync(with: view.editor)
     }
 
     public func overlayViewDidConfirm(_ view: OverlayView) {
@@ -284,5 +322,65 @@ final class CaptureSession: OverlayViewDelegate {
             return nil
         }
         return raw.uint32Value
+    }
+}
+
+// MARK: - ToolbarDelegate
+
+extension CaptureSession: ToolbarDelegate {
+    public func toolbar(_ toolbar: ToolbarWindow, didSelect tool: Tool) {
+        overlayView?.editor.select(tool: tool)
+        refreshToolbar()
+    }
+
+    public func toolbar(_ toolbar: ToolbarWindow, didPick color: AnnotationColor) {
+        overlayView?.editor.style.color = color
+        // Applying to the selection is what makes a swatch a restyle rather
+        // than only a setting for the next shape.
+        overlayView?.editor.applyStyleToSelection()
+        refreshToolbar()
+    }
+
+    public func toolbar(_ toolbar: ToolbarWindow, didPickStroke width: CGFloat) {
+        overlayView?.editor.style.width = width
+        overlayView?.editor.applyStyleToSelection()
+        refreshToolbar()
+    }
+
+    public func toolbar(_ toolbar: ToolbarWindow, didPickFontSize size: CGFloat) {
+        overlayView?.editor.style.fontSize = size
+        overlayView?.editor.applyStyleToSelection()
+        refreshToolbar()
+    }
+
+    public func toolbarDidUndo(_ toolbar: ToolbarWindow) {
+        overlayView?.editor.undo()
+        refreshToolbar()
+    }
+
+    public func toolbarDidRedo(_ toolbar: ToolbarWindow) {
+        overlayView?.editor.redo()
+        refreshToolbar()
+    }
+
+    public func toolbarDidCancel(_ toolbar: ToolbarWindow) {
+        guard let view = overlayView else { return }
+        overlayViewDidDismiss(view)
+    }
+
+    public func toolbarDidSave(_ toolbar: ToolbarWindow) {
+        save()
+    }
+
+    public func toolbarDidConfirm(_ toolbar: ToolbarWindow) {
+        guard let view = overlayView else { return }
+        overlayViewDidConfirm(view)
+    }
+
+    /// Redraw the canvas and put the controls back in step with it.
+    private func refreshToolbar() {
+        guard let view = overlayView else { return }
+        view.needsDisplay = true
+        toolbar?.sync(with: view.editor)
     }
 }

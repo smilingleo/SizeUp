@@ -1,7 +1,8 @@
 import AppKit
 import Annotation
+import Capture
 
-/// What a click-drag does to the selection.
+/// What a click-drag does to the region selection.
 enum SelectionDragMode {
     case none
     case newSelection
@@ -16,144 +17,197 @@ public protocol OverlayViewDelegate: AnyObject {
     func overlayView(_ view: OverlayView, didChangeSelection rect: CGRect?)
     /// Escape was pressed.
     func overlayViewDidDismiss(_ view: OverlayView)
-    /// Return was pressed: the user confirmed the selection.
+    /// Return/Enter was pressed — copy the crop.
     func overlayViewDidConfirm(_ view: OverlayView)
-    /// ⌘S was pressed: save the selection to a file.
+    /// ⌘S was pressed — save the crop to a file.
     func overlayViewDidSave(_ view: OverlayView)
+    /// The editor state changed, so a toolbar should refresh.
+    func overlayViewDidChangeEditor(_ view: OverlayView)
 }
 
-/// The capture canvas: the screenshot as background, a darkened complement,
-/// and the dashed selection rectangle with eight resize handles.
+public extension OverlayViewDelegate {
+    func overlayViewDidChangeEditor(_ view: OverlayView) {}
+}
+
+/// The full-display capture surface: the frozen screenshot, the region
+/// selection, and the annotation canvas on top of it.
 ///
-/// Flipped coordinates (top-left origin) so model rects map 1:1 onto the
-/// drawing space; the point→pixel conversion happens at the compositing
-/// boundary (Task 5), matching the Rust model which is likewise in points.
-///
-/// C1 scope: region selection only. The annotation canvas (drawing, selecting,
-/// styling shapes) lands in C2, which extends this view.
-@MainActor
+/// The view is flipped (top-left origin) to match the Rust original, so every
+/// coordinate here — selection, annotations, handles — is top-left based and
+/// needs no conversion when it reaches the image.
 public final class OverlayView: NSView {
     public weak var delegate: OverlayViewDelegate?
 
-    /// The captured screenshot, in its natural pixel size.
     private var screenshot: NSImage?
+    /// Kept alongside the NSImage so the blur tool can sample real pixels.
+    private var screenshotImage: CGImage?
+
     /// The display's backing scale factor (points → pixels).
     public private(set) var scaleFactor: CGFloat = 1
 
     /// The current selection in view (point) coordinates, normalized.
     public private(set) var selection: CGRect?
 
-    /// The annotations placed on the canvas.
+    /// The annotation canvas: shapes, tool, style, selection and undo history.
     ///
-    /// This is the seam C2 builds on: the stored shapes the canvas renders and
-    /// the user can select/move/resize/style. In C1 it stays empty (the
-    /// screenshot flow copies a bare crop), but the property and `attach`
-    /// exist now so that when the annotation canvas lands it extends the canvas
-    /// (rendering, drag, style panel) rather than the window — C2 is "the
-    /// canvas, not the window."
-    public private(set) var annotations: [Annotation] = []
-
-    /// Place an annotation on the canvas. C2's tool actions call this; the view
-    /// redraws. It is the one place the model and the canvas meet, so C2 finds
-    /// a stable anchor here (the eleven `Annotation.Kind`s and the nine swatch
-    /// colors are already the model's surface).
-    public func attach(_ annotation: Annotation) {
-        annotations.append(annotation)
-        needsDisplay = true
-    }
+    /// The editor is a pure state machine, so the interesting behaviour is
+    /// tested without a window; this view only turns events into calls on it
+    /// and draws the result.
+    public var editor = Editor()
 
     private var dragMode: SelectionDragMode = .none
     private var dragStart: CGPoint = .zero
     private var originalSelection: CGRect?
+    /// True while the drag belongs to the editor rather than to the region.
+    private var editorOwnsDrag = false
+
+    private var textView: NSTextView?
 
     /// Tolerance for grabbing a resize handle.
     private let handleTolerance: CGFloat = 6
 
-    public override init(frame: NSRect) {
+    public init(frame: NSRect, scale: CGFloat = 1) {
+        scaleFactor = scale
         super.init(frame: frame)
         wantsLayer = true
     }
 
+    public override convenience init(frame: NSRect) {
+        self.init(frame: frame, scale: 1)
+    }
+
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    public override func resetCursorRects() {
+        // A crosshair while a drawing tool is armed, an arrow for select. The
+        // pointer is the only thing telling the user which tool is live once
+        // their eyes are on the screenshot rather than the toolbar.
+        discardCursorRects()
+        addCursorRect(bounds, cursor: editor.tool == .select ? .arrow : .crosshair)
+    }
 
     public override var isFlipped: Bool { true }
     public override var acceptsFirstResponder: Bool { true }
     public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     public override func becomeFirstResponder() -> Bool { true }
 
-    // MARK: Input surface (the C2 seam extends these, not replaces them)
+    // MARK: Setup
 
     /// Install the screenshot. `scale` maps view points to the image's pixels.
     public func setScreenshot(_ image: NSImage, scale: CGFloat) {
         screenshot = image
+        screenshotImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
         scaleFactor = scale
         selection = nil
+        editor.reset()
+        endTextEditing()
         needsDisplay = true
     }
+
+    /// Place an annotation on the canvas directly (used by tests and by any
+    /// caller that wants to seed the canvas).
+    public func attach(_ annotation: Annotation) {
+        editor.append(annotation)
+        needsDisplay = true
+    }
+
+    public var annotations: [Annotation] { editor.annotations }
+
+    // MARK: Mouse
 
     public override func mouseDown(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
         dragStart = p
+        endTextEditing()
 
+        // No region yet: the first drag defines it, and there is nothing to
+        // annotate until it exists.
         guard let sel = selection else {
+            editorOwnsDrag = false
             dragMode = .newSelection
             selection = CGRect(origin: p, size: .zero)
             return
         }
 
-        // Handle grab (corners + edge midpoints, in priority order).
-        let norm = sel
-        for (kind, point) in Self.rectangleHandles(norm) {
-            if p.distance(to: point) <= handleTolerance {
-                dragMode = .resize(kind)
-                originalSelection = norm
+        // Annotations live inside the region. A click outside it is about the
+        // region, never about the canvas.
+        if sel.insetBy(dx: -handleTolerance, dy: -handleTolerance).contains(p) {
+            if editor.pointerDown(at: p) {
+                editorOwnsDrag = true
+                dragMode = .none
+                if editor.editingText != nil { beginTextEditing() }
+                notifyEditorChanged()
+                needsDisplay = true
                 return
             }
         }
-        if p.isIn(norm) {
+        editorOwnsDrag = false
+
+        // Handle grab (corners + edge midpoints, in priority order).
+        for (kind, point) in Self.rectangleHandles(sel) {
+            if p.distance(to: point) <= handleTolerance {
+                dragMode = .resize(kind)
+                originalSelection = sel
+                return
+            }
+        }
+
+        if sel.contains(p) {
             dragMode = .move
-            originalSelection = norm
+            originalSelection = sel
             return
         }
-        dragMode = .none
+
+        // Outside: start over.
+        dragMode = .newSelection
+        selection = CGRect(origin: p, size: .zero)
+        needsDisplay = true
     }
 
     public override func mouseDragged(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
-        let dx = p.x - dragStart.x
-        let dy = p.y - dragStart.y
+
+        if editorOwnsDrag {
+            editor.pointerDragged(to: p)
+            needsDisplay = true
+            return
+        }
 
         switch dragMode {
-        case .newSelection:
-            selection = CGRect(
-                x: min(dragStart.x, p.x), y: min(dragStart.y, p.y),
-                width: abs(dx), height: abs(dy)
-            )
-        case .move:
-            if let r = originalSelection {
-                selection = r.offsetBy(dx: dx, dy: dy)
-            }
-        case .resize(let handle):
-            if let r = originalSelection {
-                selection = Self.applyRectResize(r, handle: handle, to: p)
-            }
         case .none:
             break
+        case .newSelection:
+            selection = Annotation.normalizeRect(
+                dragStart, CGSize(width: p.x - dragStart.x, height: p.y - dragStart.y))
+        case .move:
+            guard let original = originalSelection else { break }
+            selection = original.offsetBy(dx: p.x - dragStart.x, dy: p.y - dragStart.y)
+        case let .resize(kind):
+            guard let original = originalSelection else { break }
+            selection = Annotation.applyRectResize(original, handle: kind, to: p)
         }
         needsDisplay = true
     }
 
     public override func mouseUp(with event: NSEvent) {
-        if var sel = selection {
-            sel = sel.standardized
-            // A click (sub-3pt rect) cancels the selection.
-            if sel.width < 3 || sel.height < 3 {
-                sel = .zero
-                selection = nil
-            } else {
-                selection = sel
+        let p = convert(event.locationInWindow, from: nil)
+
+        if editorOwnsDrag {
+            if let crop = editor.pointerUp(at: p) {
+                applyCrop(crop)
             }
+            editorOwnsDrag = false
+            if editor.editingText != nil { beginTextEditing() }
+            notifyEditorChanged()
+            needsDisplay = true
+            return
+        }
+
+        // A click, not a drag, clears the region.
+        if case .newSelection = dragMode, let sel = selection,
+           sel.width < 3 || sel.height < 3 {
+            selection = nil
         }
         dragMode = .none
         originalSelection = nil
@@ -161,17 +215,158 @@ public final class OverlayView: NSView {
         delegate?.overlayView(self, didChangeSelection: selection)
     }
 
+    /// Cropping shrinks the region; annotations keep their coordinates.
+    private func applyCrop(_ crop: CGRect) {
+        let clamped = selection?.intersection(crop) ?? crop
+        guard clamped.width >= 5, clamped.height >= 5 else { return }
+        selection = clamped
+        editor.select(tool: .select)
+        delegate?.overlayView(self, didChangeSelection: selection)
+    }
+
+    // MARK: Keyboard
+
     public override func keyDown(with event: NSEvent) {
+        let flags = event.modifierFlags
+        let command = flags.contains(.command)
+
         switch event.keyCode {
         case 53: // Escape
+            // Escape backs out one layer at a time rather than throwing the
+            // capture away: first text entry, then a selected shape, then the
+            // whole overlay.
+            if textView != nil {
+                endTextEditing()
+                return
+            }
+            if editor.selected != nil {
+                editor.clearSelection()
+                notifyEditorChanged()
+                needsDisplay = true
+                return
+            }
             delegate?.overlayViewDidDismiss(self)
+            return
+
         case 36, 76: // Return / Enter
             delegate?.overlayViewDidConfirm(self)
-        case 1 where event.modifierFlags.contains(.command): // ⌘S: save
+            return
+
+        case 51, 117: // Delete / Forward delete
+            if editor.selected != nil {
+                editor.deleteSelected()
+                notifyEditorChanged()
+                needsDisplay = true
+                return
+            }
+
+        case 6 where command: // ⌘Z / ⇧⌘Z
+            if flags.contains(.shift) { editor.redo() } else { editor.undo() }
+            notifyEditorChanged()
+            needsDisplay = true
+            return
+
+        case 1 where command: // ⌘S
             delegate?.overlayViewDidSave(self)
+            return
+
         default:
-            super.keyDown(with: event)
+            break
         }
+
+        // Unmodified letters pick a tool; digits pick a stroke width. Both are
+        // ignored while typing, where they are just text.
+        guard !command, !flags.contains(.control), !flags.contains(.option),
+              let characters = event.charactersIgnoringModifiers?.lowercased(),
+              let key = characters.first
+        else {
+            super.keyDown(with: event)
+            return
+        }
+
+        if let tool = Tool.allCases.first(where: { $0.shortcutKey == key }) {
+            editor.select(tool: tool)
+            notifyEditorChanged()
+            needsDisplay = true
+            return
+        }
+        if let digit = key.wholeNumberValue, (1...3).contains(digit) {
+            editor.style.width = AnnotationStyle.strokeWidth(preset: digit - 1)
+            editor.applyStyleToSelection()
+            notifyEditorChanged()
+            needsDisplay = true
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    private func notifyEditorChanged() {
+        window?.invalidateCursorRects(for: self)
+        delegate?.overlayViewDidChangeEditor(self)
+    }
+
+    // MARK: Text entry
+
+    /// Put a real NSTextView over the annotation being typed into.
+    ///
+    /// An NSTextView rather than hand-rolled key handling, because that is what
+    /// buys a caret, selection, and — the reason it matters — input methods.
+    /// Typing Chinese, Japanese or Korean into a screenshot label has to work,
+    /// and a keyDown-appends-a-character loop cannot do it.
+    private func beginTextEditing() {
+        guard textView == nil,
+              let index = editor.editingText,
+              editor.annotations.indices.contains(index)
+        else { return }
+        let annotation = editor.annotations[index]
+
+        let frame: CGRect
+        var existing = ""
+        switch annotation.kind {
+        case let .text(position, text):
+            existing = text
+            frame = CGRect(x: position.x, y: position.y,
+                           width: max(240, text.measure(size: annotation.fontSize).width + 40),
+                           height: max(annotation.fontSize * 1.6, 26))
+        case let .callout(origin, size, _, text):
+            existing = text
+            let bubble = Annotation.normalizeRect(origin, size)
+            frame = CGRect(x: bubble.minX + 10, y: bubble.minY + 8,
+                           width: max(bubble.width - 20, 20), height: max(bubble.height - 16, 20))
+        default:
+            return
+        }
+
+        let view = NSTextView(frame: frame)
+        view.delegate = self
+        view.string = existing
+        view.font = .systemFont(ofSize: annotation.fontSize)
+        view.drawsBackground = false
+        view.isRichText = false
+        view.textContainerInset = .zero
+        view.textContainer?.lineFragmentPadding = 0
+        view.insertionPointColor = .systemBlue
+        if case .callout = annotation.kind {
+            view.textColor = NSColor(white: 0.12, alpha: 1)
+        } else {
+            view.textColor = NSColor(red: annotation.color.r, green: annotation.color.g,
+                                     blue: annotation.color.b, alpha: 1)
+        }
+        addSubview(view)
+        textView = view
+        window?.makeFirstResponder(view)
+    }
+
+    /// Commit what was typed and take the text view away.
+    public func endTextEditing() {
+        guard let view = textView else { return }
+        textView = nil
+        editor.setEditingText(view.string)
+        view.removeFromSuperview()
+        editor.endTextEditing()
+        window?.makeFirstResponder(self)
+        notifyEditorChanged()
+        needsDisplay = true
     }
 
     // MARK: Drawing
@@ -210,7 +405,16 @@ public final class OverlayView: NSView {
         if sel.minY > full.minY { dimRect(context, full.withRect(topEdgeTo: sel.minY)) }
         if sel.maxY < full.maxY { dimRect(context, full.withRect(bottomEdgeFrom: sel.maxY)) }
 
-        // 3. Dashed border.
+        // 3. The annotations, clipped to the region so a stroke dragged past
+        //    the edge cannot bleed into the dimmed surround (and cannot appear
+        //    in a place the crop will not include).
+        context.saveGState()
+        context.clip(to: sel)
+        AnnotationRenderer.draw(renderList(), in: context,
+                                blurSource: screenshotImage, blurScale: scaleFactor)
+        context.restoreGState()
+
+        // 4. Dashed border.
         context.saveGState()
         context.setStrokeColor(NSColor.white.cgColor)
         context.setLineWidth(1.5)
@@ -218,21 +422,88 @@ public final class OverlayView: NSView {
         context.stroke(sel)
         context.restoreGState()
 
-        // 5. Handles.
+        // 5. Region handles.
         for (_, point) in Self.rectangleHandles(sel) {
             let h: CGFloat = 6
-            let handleRect = CGRect(x: point.x - h / 2, y: point.y - h / 2, width: h, height: h)
-            context.setFillColor(NSColor.white.cgColor)
-            context.fill(handleRect)
-            context.setStrokeColor(NSColor.black.cgColor)
-            context.setLineWidth(1)
-            context.stroke(handleRect)
+            drawHandle(context, CGRect(x: point.x - h / 2, y: point.y - h / 2, width: h, height: h))
         }
 
-        // 6. Size badge (pixel dimensions — that's what the capture will be).
-        let w = Int(sel.width * scaleFactor)
-        let h = Int(sel.height * scaleFactor)
+        // 6. The selected annotation's own handles, so it can be resized.
+        if let annotation = editor.selectedAnnotation {
+            for (_, point) in annotation.resizeHandles() {
+                let h: CGFloat = 7
+                drawHandle(context, CGRect(x: point.x - h / 2, y: point.y - h / 2,
+                                           width: h, height: h), accent: true)
+            }
+        }
+
+        // 7. A crop in progress.
+        if let crop = editor.cropDraft {
+            context.saveGState()
+            context.setStrokeColor(NSColor.systemYellow.cgColor)
+            context.setLineWidth(1.5)
+            context.setLineDash(phase: 0, lengths: [4, 3])
+            context.stroke(crop)
+            context.restoreGState()
+        }
+
+        let w = Int((sel.width * scaleFactor).rounded())
+        let h = Int((sel.height * scaleFactor).rounded())
         drawSizeBadge(context, "\(w) × \(h)", near: sel, in: boundsRect)
+    }
+
+    /// What to draw: the committed shapes plus any live draft. The annotation
+    /// being typed into has its text suppressed, because the NSTextView on top
+    /// is already drawing it — otherwise every glyph renders twice and looks
+    /// smeared.
+    /// Exposed for tests: the suppression of in-progress text is a drawing
+    /// rule that is otherwise only observable as smeared pixels.
+    func renderListForTesting() -> [Annotation] { renderList() }
+
+    private func renderList() -> [Annotation] {
+        var list = editor.renderList
+        if textView != nil, let index = editor.editingText, list.indices.contains(index) {
+            switch list[index].kind {
+            case let .text(position, _):
+                list[index].kind = .text(position: position, text: "")
+            case let .callout(origin, size, pointer, _):
+                list[index].kind = .callout(origin: origin, size: size, pointer: pointer, text: "")
+            default:
+                break
+            }
+        }
+        return list
+    }
+
+    private func drawHandle(_ context: CGContext, _ rect: CGRect, accent: Bool = false) {
+        context.saveGState()
+        context.setFillColor(accent ? NSColor.systemBlue.cgColor : NSColor.white.cgColor)
+        context.fill(rect)
+        context.setStrokeColor(NSColor(white: 0, alpha: 0.5).cgColor)
+        context.setLineWidth(0.5)
+        context.stroke(rect)
+        context.restoreGState()
+    }
+
+    private func drawSizeBadge(_ context: CGContext, _ text: String, near sel: CGRect, in bounds: CGRect) {
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium),
+            .foregroundColor: NSColor.white,
+        ]
+        let size = (text as NSString).size(withAttributes: attributes)
+        let pad: CGFloat = 4
+        var badge = CGRect(x: sel.minX, y: sel.minY - size.height - pad * 2 - 4,
+                           width: size.width + pad * 2, height: size.height + pad * 2)
+        // Keep it on screen: below the selection if there is no room above.
+        if badge.minY < bounds.minY { badge.origin.y = sel.minY + 4 }
+        badge.origin.x = min(max(badge.minX, bounds.minX), bounds.maxX - badge.width)
+
+        context.saveGState()
+        context.setFillColor(NSColor(white: 0, alpha: 0.65).cgColor)
+        context.fill(badge)
+        context.restoreGState()
+        (text as NSString).draw(at: CGPoint(x: badge.minX + pad, y: badge.minY + pad),
+                                withAttributes: attributes)
     }
 
     private func dimEntire(_ context: CGContext, in rect: CGRect) {
@@ -247,33 +518,20 @@ public final class OverlayView: NSView {
         context.restoreGState()
     }
 
-    private func drawSizeBadge(_ context: CGContext, _ text: String, near sel: CGRect, in bounds: CGRect) {
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium),
-            .foregroundColor: NSColor.white,
-        ]
-        let textSize = (text as NSString).size(withAttributes: attributes)
-        var x = sel.midX - textSize.width / 2
-        var y = sel.minY - textSize.height - 6
-        if y < 0 { y = sel.maxY + 6 } // no room above → below
-        x = min(max(0, x), bounds.maxX - textSize.width)
-        y = min(max(0, y), bounds.maxY - textSize.height)
-        let pad: CGFloat = 4
-        let badge = CGRect(x: x - pad, y: y - pad, width: textSize.width + pad * 2, height: textSize.height + pad * 2)
-        context.setFillColor(NSColor(white: 0, alpha: 0.75).cgColor)
-        let path = CGPath(roundedRect: badge, cornerWidth: 4, cornerHeight: 4, transform: nil)
-        context.addPath(path)
-        context.fillPath()
-        (text as NSString).draw(at: CGPoint(x: badge.minX + pad, y: badge.minY + pad), withAttributes: attributes)
-    }
+    // MARK: Handles
 
-    /// The eight selection handles (corners + edge midpoints).
+    /// The eight region handles, corners first so a corner wins a tie with an
+    /// edge when they overlap on a small selection.
     static func rectangleHandles(_ r: CGRect) -> [(HandleKind, CGPoint)] {
         Annotation.rectHandles(r)
     }
+}
 
-    static func applyRectResize(_ r: CGRect, handle: HandleKind, to point: CGPoint) -> CGRect {
-        Annotation.applyRectResize(r, handle: handle, to: point)
+extension OverlayView: NSTextViewDelegate {
+    public func textDidChange(_ notification: Notification) {
+        guard let view = textView else { return }
+        editor.setEditingText(view.string)
+        needsDisplay = true
     }
 }
 
@@ -292,9 +550,7 @@ extension CGRect {
     }
 }
 
-/// A borderless window that can still become key, so the overlay receives
-/// keyboard input (Escape/Return) while borderless.
-@MainActor
+/// The borderless window that hosts the overlay, one per display.
 public final class OverlayWindow: NSWindow {
     public override var canBecomeKey: Bool { true }
     public override var canBecomeMain: Bool { true }
@@ -302,31 +558,27 @@ public final class OverlayWindow: NSWindow {
     private let view: OverlayView
 
     public init(displayFrame: CGRect, scale: CGFloat) {
-        view = OverlayView(frame: displayFrame)
-        super.init(
-            contentRect: displayFrame,
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        contentView = view
-        // The Rust app used level 102; `overlayWindow` is 102 (probe ✓).
+        view = OverlayView(frame: CGRect(origin: .zero, size: displayFrame.size), scale: scale)
+        super.init(contentRect: displayFrame, styleMask: .borderless,
+                   backing: .buffered, defer: false)
+        // 102: above everything ordinary, including the Dock and full-screen
+        // apps. NSWindow.Level has no symbolic member for it.
         level = NSWindow.Level(rawValue: Int(CGWindowLevelKey.overlayWindow.rawValue))
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        backgroundColor = .black
         isOpaque = false
+        backgroundColor = .clear
         hasShadow = false
         isMovable = false
         hidesOnDeactivate = false
-        view.setScreenshot(NSImage(), scale: scale) // cleared on the real one
+        acceptsMouseMovedEvents = true
+        isReleasedWhenClosed = false
+        contentView = view
     }
 
-    /// The view backing the window.
     public var overlayView: OverlayView { view }
 
-    /// Show and take key status (this is what routes Escape/Return to it).
     public func present() {
         makeKeyAndOrderFront(nil)
-        view.window?.makeFirstResponder(view)
+        makeFirstResponder(view)
     }
 }

@@ -18,6 +18,12 @@ public struct AnnotationColor: Hashable, Codable, Sendable {
 
     public var cgColor: CGColor { CGColor(red: r, green: g, blue: b, alpha: 1) }
 
+    /// The same colour at a given alpha — the shape fills are the swatch at
+    /// 12%, the highlighter at its own opacity.
+    public func cgColor(alpha: CGFloat) -> CGColor {
+        CGColor(red: r, green: g, blue: b, alpha: alpha)
+    }
+
     /// The nine swatches the style panel offers, in the Rust ClipShot order
     /// (values transcribed from `style_panel.rs`, not recolored).
     public static let choices: [AnnotationColor] = [
@@ -44,6 +50,9 @@ public enum AnnotationStyle {
     public static let defaultFontSize: CGFloat = 18
     /// Callout font size is intentionally independent of the text tool's.
     public static let defaultCalloutFontSize: CGFloat = 18
+
+    /// The radius of a step badge (Rust's `radius: 14.0`).
+    public static let stepRadius: CGFloat = 14
 
     public static func strokeWidth(preset: Int) -> CGFloat {
         switch preset {
@@ -293,6 +302,35 @@ public struct Annotation: Equatable, Hashable, Codable, Sendable {
 
     /// Update an in-progress annotation with a new mouse position while
     /// drawing. Callouts re-derive their bubble from the pointer each move.
+    /// Fold a negative size back into the origin.
+    ///
+    /// A shape dragged right-to-left, or resized past its opposite edge, ends
+    /// up with a negative width or height. It still *draws* correctly, because
+    /// the renderer normalizes, but its handles are computed from the raw
+    /// origin/size and would land on the wrong corners — so the shape becomes
+    /// awkward to resize again. Normalizing on mouse-up keeps the two in step.
+    public mutating func normalize() {
+        switch kind {
+        case let .rect(origin, size):
+            let r = Annotation.normalizeRect(origin, size)
+            kind = .rect(origin: r.origin, size: r.size)
+        case let .ellipse(origin, size):
+            let r = Annotation.normalizeRect(origin, size)
+            kind = .ellipse(origin: r.origin, size: r.size)
+        case let .highlight(origin, size):
+            let r = Annotation.normalizeRect(origin, size)
+            kind = .highlight(origin: r.origin, size: r.size)
+        case let .blur(origin, size):
+            let r = Annotation.normalizeRect(origin, size)
+            kind = .blur(origin: r.origin, size: r.size)
+        case let .callout(origin, size, pointer, text):
+            let r = Annotation.normalizeRect(origin, size)
+            kind = .callout(origin: r.origin, size: r.size, pointer: pointer, text: text)
+        case .arrow, .pencil, .text, .step:
+            break // no origin/size pair to fold
+        }
+    }
+
     public mutating func update(with point: CGPoint) {
         switch kind {
         case .arrow(let start, _):
@@ -369,16 +407,16 @@ public struct Annotation: Equatable, Hashable, Codable, Sendable {
 
 // MARK: - Geometry helpers (the shared primitives)
 
-extension CGRect {
+public extension CGRect {
     /// Grow on all sides by `amount` (negative shrinks).
-    public func inflate(_ amount: CGFloat) -> CGRect {
+    func inflate(_ amount: CGFloat) -> CGRect {
         CGRect(x: origin.x - amount, y: origin.y - amount,
                width: size.width + amount * 2, height: size.height + amount * 2)
     }
 
     /// Smallest rect containing both. Named `unite`: CoreGraphics already
     /// provides `CGRect.union(_:)`, so the same name would be a collision.
-    public func unite(_ other: CGRect) -> CGRect {
+    func unite(_ other: CGRect) -> CGRect {
         CGRect(
             x: min(minX, other.minX), y: min(minY, other.minY),
             width: max(maxX, other.maxX) - min(minX, other.minX),
@@ -387,17 +425,17 @@ extension CGRect {
     }
 }
 
-extension CGPoint {
-    public func isIn(_ rect: CGRect) -> Bool {
+public extension CGPoint {
+    func isIn(_ rect: CGRect) -> Bool {
         x >= rect.minX && x <= rect.maxX && y >= rect.minY && y <= rect.maxY
     }
 
-    public func distance(to other: CGPoint) -> CGFloat {
+    func distance(to other: CGPoint) -> CGFloat {
         hypot(x - other.x, y - other.y)
     }
 
     /// Shortest distance to the segment `start`–`end`.
-    public func distance(toSegment start: CGPoint, end: CGPoint) -> CGFloat {
+    func distance(toSegment start: CGPoint, end: CGPoint) -> CGFloat {
         let dx = end.x - start.x
         let dy = end.y - start.y
         let lenSq = dx * dx + dy * dy
@@ -408,7 +446,7 @@ extension CGPoint {
     }
 }
 
-extension String {
+public extension String {
     /// The rendered size of this string in the system font, via CoreText —
     /// AppKit-free (probe-verified: `CTLineGetTypographicBounds` on a
     /// `CFAttributedString` measures with the same system-font metrics the
@@ -418,14 +456,21 @@ extension String {
               let font = CTFontCreateUIFontForLanguage(.system, fontSize, nil)
         else { return .zero }
         let attributes = [kCTFontAttributeName: font] as CFDictionary
-        guard let attributed = CFAttributedStringCreate(nil, self as CFString, attributes) else {
-            return .zero
+
+        // Measure per line and take the widest, the way Rust's
+        // `boundingRectWithSize:` does. Measuring the raw string as one CTLine
+        // would treat a newline as just another glyph: a two-line label would
+        // come out twice as wide and half as tall, so its hit box and its
+        // backdrop plate would both be wrong.
+        let lines = split(separator: "\n", omittingEmptySubsequences: false)
+        var widest: CGFloat = 0
+        for line in lines where !line.isEmpty {
+            guard let attributed = CFAttributedStringCreate(nil, String(line) as CFString, attributes)
+            else { continue }
+            let ctLine = CTLineCreateWithAttributedString(attributed)
+            widest = max(widest, ceil(CTLineGetTypographicBounds(ctLine, nil, nil, nil)))
         }
-        let line = CTLineCreateWithAttributedString(attributed)
-        return CGSize(
-            width: ceil(CTLineGetTypographicBounds(line, nil, nil, nil)),
-            height: ceil(fontSize * 1.2)
-        )
+        return CGSize(width: widest, height: ceil(fontSize * 1.2) * CGFloat(lines.count))
     }
 }
 
