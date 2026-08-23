@@ -43,6 +43,25 @@ public final class OverlayView: NSView {
     /// The current selection in view (point) coordinates, normalized.
     public private(set) var selection: CGRect?
 
+    /// The annotations placed on the canvas.
+    ///
+    /// This is the seam C2 builds on: the stored shapes the canvas renders and
+    /// the user can select/move/resize/style. In C1 it stays empty (the
+    /// screenshot flow copies a bare crop), but the property and `attach`
+    /// exist now so that when the annotation canvas lands it extends the canvas
+    /// (rendering, drag, style panel) rather than the window — C2 is "the
+    /// canvas, not the window."
+    public private(set) var annotations: [Annotation] = []
+
+    /// Place an annotation on the canvas. C2's tool actions call this; the view
+    /// redraws. It is the one place the model and the canvas meet, so C2 finds
+    /// a stable anchor here (the eleven `Annotation.Kind`s and the nine swatch
+    /// colors are already the model's surface).
+    public func attach(_ annotation: Annotation) {
+        annotations.append(annotation)
+        needsDisplay = true
+    }
+
     private var dragMode: SelectionDragMode = .none
     private var dragStart: CGPoint = .zero
     private var originalSelection: CGRect?

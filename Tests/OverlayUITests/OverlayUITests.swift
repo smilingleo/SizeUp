@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import Testing
+import Annotation
 @testable import OverlayUI
 
 // `OverlayUI` is AppKit (a window), so the interaction behavior rides the
@@ -36,4 +37,22 @@ import Testing
     view.setScreenshot(NSImage(), scale: 3)
     #expect(view.scaleFactor == 3)
     #expect(view.selection == nil)
+}
+
+@Test @MainActor func attachIsTheSeamC2BuildsOn() {
+    // The C2 seam: the canvas holds the stored shapes and `attach` is the one
+    // place the annotation model meets the view. C1 leaves the canvas empty;
+    // this pins that the seam exists and records shapes, so C2 extends the
+    // canvas (rendering/drag/style) rather than reinventing the window.
+    let window = OverlayWindow(displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100), scale: 2)
+    defer { window.orderOut(nil) }
+    let view = window.overlayView
+
+    #expect(view.annotations.isEmpty)
+    let rect = Annotation(kind: .rect(origin: CGPoint(x: 10, y: 10), size: CGSize(width: 40, height: 20)),
+                          color: AnnotationColor.choices[3])
+    view.attach(rect)
+    #expect(view.annotations == [rect])
+    view.attach(Annotation(kind: Annotation.Kind.arrow(start: CGPoint(x: 0, y: 0), end: CGPoint(x: 5, y: 5))))
+    #expect(view.annotations.count == 2)
 }

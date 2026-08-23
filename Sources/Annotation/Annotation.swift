@@ -245,7 +245,7 @@ public struct Annotation: Equatable, Hashable, Codable, Sendable {
             case .blur: kind = .blur(origin: origin, size: size)
             default: break
             }
-        case var .callout(origin, size, pointer, text):
+        case .callout(var origin, var size, var pointer, let text):
             if handle == .calloutPointer {
                 pointer = point
             } else {
@@ -266,8 +266,8 @@ public struct Annotation: Equatable, Hashable, Codable, Sendable {
         case var .arrow(start, end):
             start.x += dx; start.y += dy; end.x += dx; end.y += dy
             kind = .arrow(start: start, end: end)
-        case var .rect(origin, size), var .ellipse(origin, size), var .highlight(origin, size),
-             var .blur(origin, size):
+        case .rect(var origin, let size), .ellipse(var origin, let size),
+             .highlight(var origin, let size), .blur(var origin, let size):
             origin.x += dx; origin.y += dy
             switch kind {
             case .rect: kind = .rect(origin: origin, size: size)
@@ -279,13 +279,13 @@ public struct Annotation: Equatable, Hashable, Codable, Sendable {
         case var .pencil(points):
             for i in points.indices { points[i].x += dx; points[i].y += dy }
             kind = .pencil(points: points)
-        case var .text(position, text):
+        case .text(var position, let text):
             position.x += dx; position.y += dy
             kind = .text(position: position, text: text)
-        case var .callout(origin, size, pointer, text):
+        case .callout(var origin, let size, var pointer, let text):
             origin.x += dx; origin.y += dy; pointer.x += dx; pointer.y += dy
             kind = .callout(origin: origin, size: size, pointer: pointer, text: text)
-        case var .step(center, radius):
+        case .step(var center, let radius):
             center.x += dx; center.y += dy
             kind = .step(center: center, radius: radius)
         }
@@ -295,10 +295,10 @@ public struct Annotation: Equatable, Hashable, Codable, Sendable {
     /// drawing. Callouts re-derive their bubble from the pointer each move.
     public mutating func update(with point: CGPoint) {
         switch kind {
-        case var .arrow(start, _):
+        case .arrow(let start, _):
             kind = .arrow(start: start, end: point)
-        case var .rect(origin, _), var .ellipse(origin, _), var .highlight(origin, _),
-             var .blur(origin, _):
+        case .rect(let origin, _), .ellipse(let origin, _), .highlight(let origin, _),
+             .blur(let origin, _):
             let size = CGSize(width: point.x - origin.x, height: point.y - origin.y)
             switch kind {
             case .rect: kind = .rect(origin: origin, size: size)
@@ -310,17 +310,16 @@ public struct Annotation: Equatable, Hashable, Codable, Sendable {
         case var .pencil(points):
             points.append(point)
             kind = .pencil(points: points)
-        case var .text(position, text):
-            _ = (position, text) // placed on click; drag moves it
+        case .text(_, let text): // placed on click; drag moves it
             kind = .text(position: point, text: text)
-        case var .callout(origin, size, pointer, text):
+        case .callout(var origin, var size, let pointer, let text):
             let draft = Annotation.calloutDraft(
                 pointer: pointer, bubbleAnchor: point, color: color, width: width, fontSize: fontSize
             )
             origin = draft.0
             size = draft.1
             kind = .callout(origin: origin, size: size, pointer: pointer, text: text)
-        case var .step(center, radius):
+        case .step(_, let radius): // the whole step moves; only radius is kept
             kind = .step(center: point, radius: radius)
         }
     }

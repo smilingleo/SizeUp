@@ -41,11 +41,13 @@ public enum FileSaver {
         return formatter
     }
 
-    /// Shows the save panel for `image` (PNG). Runs on the main actor because
-    /// `NSSavePanel` is modal UI.
+    /// Shows the save panel for `image` (PNG). Main-actor: `NSSavePanel` is
+    /// modal UI and is `@MainActor`-isolated, so the caller (the capture
+    /// session, also main-actor) invokes it from the main actor.
     ///
     /// - Returns: The chosen file URL, or `nil` if the user cancelled or the
     ///   PNG could not be encoded.
+    @MainActor
     public static func save(
         _ image: CGImage,
         kind: Kind,
