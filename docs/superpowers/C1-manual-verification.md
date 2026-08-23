@@ -165,3 +165,51 @@ the doc and README say so explicitly:
 
 `swift test` green (333), `swift build -c release` warning-free, and both lints
 pass are the automated half; this pass is the human half.
+
+---
+
+# C2: the annotation editor
+
+The editor was verified by offscreen rendering with pixel assertions, not by
+clicking. What automated tests cannot judge is whether it *feels* right, so
+these are the areas worth an eyeball.
+
+## 8. The toolbar appears with the region
+Press ⌃⌘A, drag out a region. The toolbar should fade in just below the
+selection, or above it when the region is near the bottom of the screen, always
+fully on screen. Two rows: eleven tools, then nine colours plus three stroke
+widths plus a font stepper.
+
+## 9. The toolbar must not steal the keyboard
+This is the one to check first, because it is the failure that makes everything
+else look broken. Click a tool button, then *without clicking the screenshot
+again* press `r`, then `Escape`. The tool must change and Escape must still back
+out. If keys do nothing after a toolbar click, the panel took first responder.
+
+## 10. Every tool draws
+Arrow, rectangle, ellipse, pencil, highlight, blur, step, text, callout. Drag
+each out inside the region. Then: click a shape to select it, drag it, drag a
+handle to resize it, press Delete. Pick a new colour with a shape selected — it
+should restyle that shape, not just the next one.
+
+## 11. Text and CJK
+Pick the text tool, click, and type. Then paste or type CJK and confirm the
+input method works and the glyphs are not boxes. Press Escape once: it should
+end the text, not cancel the capture. Escape again deselects, a third dismisses.
+
+## 12. What lands on the clipboard
+The point of the whole feature. Draw several shapes, press Return, and paste
+into Preview or Mail. Every shape must be there, at the size and position you
+drew it, and the image must be the region only. Do this on both a Retina and an
+external non-Retina display: a wrong scale factor puts the shapes in the right
+place on one and the wrong place on the other.
+
+## 13. The blur really obscures
+Blur over some small text, confirm, and paste. The text must be unreadable
+mosaic blocks — not a soft smear that can be sharpened back. Check that a shape
+drawn *over* a blurred area is not itself mosaicked.
+
+## 14. Undo
+Draw, move, resize, delete. ⌘Z should walk back through all four kinds of
+change, not just remove the last shape drawn. ⇧⌘Z redoes; drawing something new
+after an undo must drop the redo stack.
