@@ -189,12 +189,36 @@ final class CaptureSession: OverlayViewDelegate {
     }
 
     private func save() {
-        defer { hideOverlay() }
-        guard let cropped = cropCurrentSelection() else { return }
-        if let url = FileSaver.save(cropped, kind: .capture) {
+        // Flatten while the overlay is still up: the image and the selection
+        // are read through it.
+        guard let cropped = cropCurrentSelection() else {
+            hideOverlay()
+            return
+        }
+        // Then take the overlay down *before* the panel, not after.
+        //
+        // The overlay sits at the overlay-window level and the toolbar one
+        // above it, both far above a normal panel, so a save dialog opened
+        // underneath them is invisible and unreachable — the capture looks
+        // frozen. The pixels are already flattened by this point, so the
+        // overlay has nothing left to contribute.
+        hideOverlay()
+        // An accessory app is not active, and an inactive app's modal panel
+        // opens unfocused behind whatever the user was looking at.
+        activateForPanel()
+        if let url = presentSavePanel(cropped) {
             NSLog("ClipShot: saved capture to \(url.path)")
         }
     }
+
+    /// Presents the save dialog. A seam so tests can assert the overlay is
+    /// already gone by the time the panel would appear, which is not something
+    /// a modal panel lets a test observe.
+    var presentSavePanel: (CGImage) -> URL? = { FileSaver.save($0, kind: .capture) }
+
+    /// Bring the app forward so a modal panel is focused and frontmost.
+    /// Overridden in tests, where activating would steal focus from the runner.
+    var activateForPanel: () -> Void = { NSApp.activate() }
 
     /// The confirmed selection cropped out of the capture, in pixels. `nil` when
     /// there is no capture/selection or the selection is too small.
@@ -211,6 +235,21 @@ final class CaptureSession: OverlayViewDelegate {
             return nil
         }
         return flattened
+    }
+
+    /// Test seams for the save-ordering checks: a modal panel cannot be
+    /// observed from a test, so the overlay's presence is inspected instead.
+    var hasOverlayForTesting: Bool { overlayWindow != nil }
+
+    func installOverlayForTesting(_ window: OverlayWindow) {
+        overlayWindow = window
+        window.overlayView.delegate = self
+        captured = CapturedImage(
+            image: CGContext(data: nil, width: 200, height: 200, bitsPerComponent: 8,
+                             bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+                .makeImage()!,
+            scale: 1)
     }
 
     private func hideOverlay() {

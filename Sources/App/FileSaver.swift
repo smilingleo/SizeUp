@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import OverlayUI
 import UniformTypeIdentifiers
 
 /// Saves a captured image with an `NSSavePanel`.
@@ -58,6 +59,11 @@ public enum FileSaver {
         panel.nameFieldStringValue = name
         panel.canCreateDirectories = true
         panel.allowedContentTypes = [UTType.png]
+        // Belt and braces against being buried. The caller takes the overlay
+        // down first, but this panel is the only way out of the save flow: if
+        // anything is ever left on screen at the overlay window level, an
+        // ordinary panel behind it leaves the app looking hung with no way to
+        panel.level = OverlayLevel.aboveOverlay
 
         guard panel.runModal() == .OK, let destination = panel.url else { return nil }
         guard let png = Clipboard.pngData(from: image) else {

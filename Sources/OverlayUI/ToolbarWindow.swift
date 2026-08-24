@@ -164,7 +164,7 @@ public final class ToolbarWindow: NSPanel {
         hidesOnDeactivate = false
         isMovableByWindowBackground = true
         // One above the overlay, so it is never buried by the thing it drives.
-        level = NSWindow.Level(rawValue: Int(CGWindowLevelKey.overlayWindow.rawValue) + 1)
+        level = OverlayLevel.toolbar
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         isOpaque = false
         backgroundColor = .clear

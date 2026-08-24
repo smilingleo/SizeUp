@@ -63,6 +63,13 @@ public final class OverlayView: NSView {
 
     private var textView: NSTextView?
 
+    /// Set the region directly, for tests that need a capture ready to confirm
+    /// without synthesising a drag.
+    public func selectRegionForTesting(_ rect: CGRect) {
+        selection = rect
+        needsDisplay = true
+    }
+
     /// The live text editor, for tests that drive the label path.
     public var textViewForTesting: NSTextView? { textView }
 
@@ -601,7 +608,7 @@ public final class OverlayWindow: NSWindow {
                    backing: .buffered, defer: false)
         // 102: above everything ordinary, including the Dock and full-screen
         // apps. NSWindow.Level has no symbolic member for it.
-        level = NSWindow.Level(rawValue: Int(CGWindowLevelKey.overlayWindow.rawValue))
+        level = OverlayLevel.overlay
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         isOpaque = false
         backgroundColor = .clear

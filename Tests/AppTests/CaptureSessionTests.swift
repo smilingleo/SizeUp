@@ -1,4 +1,8 @@
+import Annotation
+import AppKit
+import Capture
 import Core
+import OverlayUI
 import Testing
 @testable import App
 
@@ -121,4 +125,58 @@ import Testing
     // And the session can start over cleanly.
     #expect(machine.handle(.screenshotRequested) == .beginCapture)
     #expect(machine.mode == .capturing)
+}
+
+// MARK: The save dialog must not open behind the overlay
+
+// The overlay and its toolbar sit above every ordinary window, so a save panel
+// presented while they are up is invisible and unreachable: the capture looks
+// frozen with no way to cancel. The panel is modal, so a test cannot observe it
+// directly -- `presentSavePanel` is the seam that makes the *ordering*
+// observable instead.
+
+@MainActor
+private func sessionReadyToSave() -> (CaptureSession, OverlayView) {
+    let session = CaptureSession(capabilities: .screenshot)
+    session.activateForPanel = {}          // never steal focus from the runner
+    let window = OverlayWindow(displayFrame: CGRect(x: 0, y: 0, width: 200, height: 200), scale: 1)
+    window.overlayView.setScreenshot(NSImage(size: NSSize(width: 200, height: 200)), scale: 1)
+    session.installOverlayForTesting(window)
+    window.overlayView.selectRegionForTesting(CGRect(x: 10, y: 10, width: 100, height: 80))
+    return (session, window.overlayView)
+}
+
+@Test @MainActor func theOverlayIsGoneBeforeTheSavePanelAppears() {
+    let (session, view) = sessionReadyToSave()
+    var overlayStillUp: Bool?
+    session.presentSavePanel = { _ in
+        overlayStillUp = session.hasOverlayForTesting
+        return nil
+    }
+    session.overlayViewDidSave(view)
+
+    let seen = try! #require(overlayStillUp, "the save panel was never presented")
+    #expect(!seen, "the dialog would have opened behind the overlay")
+}
+
+@Test @MainActor func theSavePanelStillReceivesTheFlattenedImage() {
+    // Taking the overlay down early must not cost us the pixels: they are read
+    // through the overlay, so the order is flatten, then dismiss, then present.
+    let (session, view) = sessionReadyToSave()
+    view.attach(Annotation(kind: .highlight(origin: CGPoint(x: 20, y: 20),
+                                            size: CGSize(width: 40, height: 30)),
+                           color: AnnotationColor.choices[0]))
+    var received: CGImage?
+    session.presentSavePanel = { image in received = image; return nil }
+    session.overlayViewDidSave(view)
+
+    let image = try! #require(received, "no image reached the save panel")
+    #expect(image.width == 100 && image.height == 80)
+}
+
+@Test @MainActor func cancellingTheSavePanelStillEndsTheCapture() {
+    let (session, view) = sessionReadyToSave()
+    session.presentSavePanel = { _ in nil }        // the user pressed Cancel
+    session.overlayViewDidSave(view)
+    #expect(!session.hasOverlayForTesting)
 }

@@ -20,7 +20,11 @@ import Annotation
 
     #expect(window.canBecomeKey)
     #expect(!window.styleMask.contains(.titled))
-    #expect(window.level.rawValue == Int(CGWindowLevelKey.overlayWindow.rawValue))
+    // Was asserting `CGWindowLevelKey.overlayWindow.rawValue`, which is the
+    // key's index (15), not the level (102) this test's own name claims. The
+    // window was written the same way, so the two agreed while both were wrong.
+    #expect(window.level.rawValue == 102)
+    #expect(window.level == OverlayLevel.overlay)
     #expect(window.contentView === window.overlayView)
     // The empty placeholder screenshot dims everything until the real one
     // arrives; the selection is empty.
@@ -99,4 +103,42 @@ private func halfRedHalfBlue(_ n: Int) -> CGImage {
     let bottom = rep.colorAt(x: px / 2, y: py * 3 / 4)!.usingColorSpace(.deviceRGB)!
     #expect(top.redComponent > top.blueComponent, "overlay is upside down: top should be red")
     #expect(bottom.blueComponent > bottom.redComponent, "overlay is upside down: bottom should be blue")
+}
+
+// MARK: Window levels
+
+// These only mean anything relative to each other, and the obvious spelling
+// (`CGWindowLevelKey.overlayWindow.rawValue`) yields 15, the key's index rather
+// than the level it names. 15 sits below the menu bar, so the overlay silently
+// stops covering it.
+
+@Test func theOverlaySitsAboveTheMenuBar() {
+    #expect(OverlayLevel.overlay.rawValue > NSWindow.Level.mainMenu.rawValue,
+            "the menu bar would not be dimmed or captured")
+    #expect(OverlayLevel.overlay.rawValue > NSWindow.Level.statusBar.rawValue)
+}
+
+@Test func theOverlayIsNotTheKeyIndexByMistake() {
+    #expect(OverlayLevel.overlay.rawValue == 102)
+    #expect(OverlayLevel.overlay.rawValue != Int(CGWindowLevelKey.overlayWindow.rawValue))
+}
+
+@Test func theToolbarSitsAboveTheOverlayItDrives() {
+    #expect(OverlayLevel.toolbar.rawValue > OverlayLevel.overlay.rawValue)
+}
+
+@Test func aSaveDialogCanOutrankBothOfThem() {
+    #expect(OverlayLevel.aboveOverlay.rawValue > OverlayLevel.toolbar.rawValue)
+}
+
+@Test @MainActor func theOverlayWindowUsesThatLevel() {
+    let window = OverlayWindow(displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100), scale: 1)
+    defer { window.orderOut(nil) }
+    #expect(window.level == OverlayLevel.overlay)
+}
+
+@Test @MainActor func theToolbarWindowUsesThatLevel() {
+    let toolbar = ToolbarWindow()
+    defer { toolbar.orderOut(nil) }
+    #expect(toolbar.level == OverlayLevel.toolbar)
 }
