@@ -52,9 +52,9 @@ public final class AXWindow: WindowHandle {
             writePosition: { [weak self] in self?.writePoint(kAXPositionAttribute, $0) },
             writeSize: { [weak self] in self?.writeSize(kAXSizeAttribute, $0) }
         )
-        let (achieved, attempts) = applier.apply(target)
+        let achieved = applier.apply(target)
 
-        report(before: before, request: target, achieved: achieved, attempts: attempts)
+        report(before: before, request: target, achieved: achieved)
         guard let achieved else { return nil }
         return cocoaRect(fromAX: achieved, primaryFrame: primaryFrame)
     }
@@ -68,20 +68,19 @@ public final class AXWindow: WindowHandle {
         return CGRect(origin: position, size: size)
     }
 
-    private func report(before: CGRect?, request: CGRect, achieved: CGRect?, attempts: Int) {
+    private func report(before: CGRect?, request: CGRect, achieved: CGRect?) {
         let who = bundleIdentifier ?? "pid \(pid)"
         guard let achieved else {
             Log.problem("\(who) window frame unreadable after setFrame")
             return
         }
-        let tries = attempts > 1 ? " after \(attempts) attempts" : ""
         Log.note("\(who) window was \(Self.text(before)) asked \(Self.text(request))"
-            + " now \(Self.text(achieved))\(tries) [Accessibility space]")
+            + " now \(Self.text(achieved)) [Accessibility space]")
 
         let off = FrameApplier.offset(of: achieved, from: request)
         guard off > 1 else { return }
         Log.problem("\(who) did not take the frame it was given,"
-            + " off by \(Int(off.rounded()))pt after \(attempts) attempts")
+            + " off by \(Int(off.rounded()))pt")
         logProfile()
     }
 

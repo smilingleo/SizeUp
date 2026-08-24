@@ -2,12 +2,11 @@ import CoreGraphics
 import Testing
 @testable import WindowKit
 
-/// A window that does as it is told, to establish the cost of the common case.
+/// A window that does as it is told.
 private final class Cooperative {
     var frame: CGRect
     var positionWrites = 0
     var sizeWrites = 0
-    var pauses = 0
 
     init(_ frame: CGRect) { self.frame = frame }
 
@@ -15,265 +14,107 @@ private final class Cooperative {
         FrameApplier(
             read: { self.frame },
             writePosition: { self.positionWrites += 1; self.frame.origin = $0 },
-            writeSize: { self.sizeWrites += 1; self.frame.size = $0 },
-            pause: { self.pauses += 1 }
+            writeSize: { self.sizeWrites += 1; self.frame.size = $0 }
         )
     }
 }
 
-@Test func aCooperativeWindowIsAskedOnceAndNotWaitedFor() {
+@Test func theWindowIsWrittenToExactlyThreeTimesAndReadOnce() {
+    // The regression test for a fix that made things worse.
+    //
+    // Chasing a report that Slack would not resize, this type briefly grew a
+    // three-attempt retry and a corrective position write. The result was that
+    // Slack stopped resizing on the display where it had always worked — extra
+    // writes are not free, and a window that complies is the case that must not
+    // be put at risk for one that never complies either way.
+    //
+    // So the count is pinned. Position, size, position, one read: no more, and
+    // in that order.
     let window = Cooperative(CGRect(x: 0, y: 0, width: 100, height: 100))
     let target = CGRect(x: 10, y: 20, width: 300, height: 400)
 
-    let result = window.applier().apply(target)
+    let achieved = window.applier().apply(target)
 
-    #expect(result.frame == target)
-    #expect(result.attemptsUsed == 1)
-    // The whole point of returning early: no retry, and above all no sleeping
-    // on the main thread for a window that already complied.
-    #expect(window.pauses == 0)
-    // Position, size, position. The trailing write is what fixes a window left
-    // mispositioned by a clamped size.
+    #expect(achieved == target)
     #expect(window.positionWrites == 2)
     #expect(window.sizeWrites == 1)
 }
 
-/// Slack, as the log actually recorded it.
-///
-/// The first version of this double was wrong in a way worth keeping a note
-/// about, because it would have justified a fix that cannot work. It assumed
-/// Slack validated the height against the display it *believed* it was on, and
-/// that the belief caught up once the window had been moved — which made
-/// retrying look like the answer.
-///
-/// The log says otherwise. In the failing line the window was asked to change
-/// size at an unchanged Cocoa position, and the Accessibility position did
-/// change (-825 to -1395, since Accessibility measures the top edge and the
-/// requested height differed). The position write took. The size write did not,
-/// and no amount of asking again would have changed that: Slack's height was
-/// 1290 in every one of the forty logged lines, on both displays, and 1290 is
-/// the usable height of the small display.
-///
-/// So this models what was observed and nothing more: a size whose height
-/// exceeds a fixed limit is ignored outright — both dimensions, not clamped —
-/// while position writes are honoured.
-private final class RefusesToResize {
-    /// Frozen, not capped. The probe asked for 968 with the width untouched and
-    /// that was refused too, which rules out a maximum.
-    static let frozenHeight: CGFloat = 1290
-
-    var frame: CGRect
-    var pauses = 0
-    /// Set by a refused resize and consumed by the next pause, because the
-    /// recovery is asynchronous. Modelling it on the write instead would be
-    /// useless: the last thing every attempt does is write the position, so the
-    /// drift would always be overwritten before anyone could read it, and any
-    /// implementation at all would look correct.
-    private var recovering = false
-    private var recoveries: CGFloat = 0
-
-    init(_ frame: CGRect) { self.frame = frame }
-
-    func applier() -> FrameApplier {
-        FrameApplier(
-            read: { self.frame },
-            writePosition: { self.frame.origin = $0 },
-            writeSize: { size in
-                guard size.height == self.frame.height else {
-                    self.recovering = true
-                    return
-                }
-                self.frame.size = size
-            },
-            pause: {
-                self.pauses += 1
-                guard self.recovering else { return }
-                // Lands somewhere new each time, which is what five identical
-                // requests producing five different positions looks like.
-                self.recovering = false
-                self.recoveries += 1
-                self.frame.origin.y += self.recoveries * 37
-            }
-        )
-    }
-}
-
-@Test func aWindowThatRefusesAHeightIsNotTalkedIntoItByRetrying() {
-    // Exactly the failing line, in Accessibility space.
-    let window = RefusesToResize(CGRect(x: -3360, y: -825, width: 2056, height: 1290))
-    let target = CGRect(x: -3360, y: -1395, width: 1120, height: 1860)
-
-    let result = window.applier().apply(target)
-
-    // Retrying does not win here, and the test says so rather than pretending.
-    // What it buys is that the caller and the log know: three attempts, and the
-    // frame reported back is the real one, not the one that was asked for.
-    #expect(result.attemptsUsed == 3)
-    #expect(result.frame?.size == CGSize(width: 2056, height: 1290))
-    // Three attempts, each looking again after a pause because an application
-    // still relayouting reads back mid-move, plus the settling write at the end.
-    #expect(window.pauses == 4)
-}
-
-@Test func aRefusedSizeStillLeavesTheWindowWhereItWasAskedToGo() {
-    // The consolation prize, and it is a real one: the window is top-aligned in
-    // the region it was sent to, because Accessibility positions the top edge
-    // and the trailing position write lands after the size was rejected. This
-    // is why the reported Cocoa y was 1434 rather than 864 — arithmetic, not a
-    // second bug.
-    let window = RefusesToResize(CGRect(x: 0, y: 0, width: 2056, height: 1290))
-    let target = CGRect(x: -3360, y: -1395, width: 1120, height: 1860)
-
-    let result = window.applier().apply(target)
-
-    #expect(result.frame?.origin == target.origin)
-    let primaryHeight: CGFloat = 1329
-    let cocoaY = primaryHeight - (target.minY + RefusesToResize.frozenHeight)
-    #expect(cocoaY == 1434)
-}
-
-@Test func aWindowThatWillNeverComplyGivesUpAfterABoundedNumberOfAttempts() {
-    // A genuine minimum size, like Xcode's. There is no answer here and the
-    // point is that it stops asking rather than looping.
+@Test func theTrailingPositionWriteSurvivesAWindowThatClampsItsSize() {
+    // Why there are two position writes and not one. An application enforcing a
+    // minimum size leaves the window where the clamp put it, not where it was
+    // asked to go, so the position has to be re-stated after the size.
     let minimum = CGSize(width: 600, height: 400)
     var frame = CGRect(x: 0, y: 0, width: 900, height: 700)
-    var sizeWrites = 0
-    var pauses = 0
+    var order: [String] = []
     let applier = FrameApplier(
         read: { frame },
-        writePosition: { frame.origin = $0 },
-        writeSize: {
-            sizeWrites += 1
-            frame.size = CGSize(width: max($0.width, minimum.width),
-                                height: max($0.height, minimum.height))
+        writePosition: {
+            order.append("position")
+            frame.origin = $0
         },
-        pause: { pauses += 1 }
+        writeSize: {
+            order.append("size")
+            frame = CGRect(
+                // A clamp that also shifts the window, as a real one does.
+                x: frame.minX + 40, y: frame.minY + 40,
+                width: max($0.width, minimum.width), height: max($0.height, minimum.height)
+            )
+        }
     )
 
-    let result = applier.apply(CGRect(x: 0, y: 0, width: 100, height: 100))
+    let achieved = applier.apply(CGRect(x: 500, y: 500, width: 100, height: 100))
 
-    #expect(result.attemptsUsed == 3)
-    #expect(sizeWrites == 3)
-    // Three attempts, three second looks, one settling write. The bound is what
-    // matters: a window that will never comply costs 40ms and then stops.
-    #expect(pauses == 4)
-    #expect(result.frame?.size == minimum)
+    #expect(order == ["position", "size", "position"])
+    // The size is the clamped one, but the origin is the requested one.
+    #expect(achieved == CGRect(x: 500, y: 500, width: 600, height: 400))
 }
 
-@Test func anUnreadableWindowStopsImmediatelyRatherThanRetrying() {
-    var pauses = 0
-    let applier = FrameApplier(
-        read: { nil },
-        writePosition: { _ in },
-        writeSize: { _ in },
-        pause: { pauses += 1 }
-    )
-
-    let result = applier.apply(CGRect(x: 0, y: 0, width: 10, height: 10))
-
-    #expect(result.frame == nil)
-    #expect(result.attemptsUsed == 1)
-    #expect(pauses == 0)
-}
-
-@Test func aFractionOfAPointCountsAsCompliance() {
+@Test func aFractionOfAPointCountsAsCompliance() throws {
     // Accessibility positions are integral; a tiled frame need not be. Without
-    // the tolerance every third-of-a-screen tiling would retry three times and
-    // then be logged as a refusal.
+    // the tolerance every third-of-a-screen tiling would be logged as a refusal.
     var frame = CGRect.zero
     let applier = FrameApplier(
         read: { frame },
         writePosition: { frame.origin = $0 },
-        writeSize: { frame.size = CGSize(width: $0.width.rounded(), height: $0.height.rounded()) },
-        pause: {}
+        writeSize: { frame.size = CGSize(width: $0.width.rounded(), height: $0.height.rounded()) }
     )
+    let target = CGRect(x: 0, y: 0, width: 685.333, height: 1290)
 
-    let result = applier.apply(CGRect(x: 0, y: 0, width: 685.333, height: 1290))
+    let achieved = applier.apply(target)
 
-    #expect(result.attemptsUsed == 1)
-    #expect(result.frame?.width == 685)
+    #expect(achieved?.width == 685)
+    #expect(applier.accepted(try #require(achieved), as: target))
+}
+
+@Test func aRealRefusalIsNotWavedThroughByTheTolerance() {
+    // The other side of the tolerance: 570pt out is the measured Slack
+    // discrepancy and must not round to compliance.
+    let applier = FrameApplier(read: { nil }, writePosition: { _ in }, writeSize: { _ in })
+    let asked = CGRect(x: 0, y: 0, width: 1028, height: 1860)
+    let got = CGRect(x: 0, y: 0, width: 1028, height: 1290)
+
+    #expect(!applier.accepted(got, as: asked))
+}
+
+@Test func anUnreadableWindowReportsNothingRatherThanGuessing() {
+    let applier = FrameApplier(read: { nil }, writePosition: { _ in }, writeSize: { _ in })
+
+    #expect(applier.apply(CGRect(x: 0, y: 0, width: 10, height: 10)) == nil)
 }
 
 @Test func theOffsetIsTheWorstOfTheFourNumbers() {
     let target = CGRect(x: 10, y: 10, width: 100, height: 100)
     #expect(FrameApplier.offset(of: target, from: target) == 0)
-    // Height out by 570, everything else exact — the real Slack discrepancy.
+
+    // Height out by 570, everything else exact — the measured Slack discrepancy.
     // Written as two positive heights: `CGRect.height` standardises a negative
-    // one, so `100 - 570` would quietly have measured 470 instead.
+    // one, so `100 - 570` would quietly have measured something else.
     let asked = CGRect(x: 10, y: 10, width: 100, height: 1860)
     let got = CGRect(x: 10, y: 10, width: 100, height: 1290)
     #expect(FrameApplier.offset(of: got, from: asked) == 570)
+
     // Position out by more than the size is: the worst one wins.
     let moved = CGRect(x: 10 - 900, y: 10, width: 100, height: 90)
     #expect(FrameApplier.offset(of: moved, from: target) == 900)
-}
-
-@Test func aWindowStillSettlingIsGivenASecondLookBeforeBeingBlamed() {
-    // Slack's logged frames drifted between attempts — -952, then -825, then
-    // -857 — which is an application mid-relayout being read too early. A window
-    // that arrives one read late is compliant, and must not be reported as a
-    // refusal on the strength of a frame it was only passing through.
-    let target = CGRect(x: 10, y: 20, width: 300, height: 400)
-    var reads = 0
-    var pauses = 0
-    let applier = FrameApplier(
-        read: {
-            reads += 1
-            // The first read catches it halfway; the second, after the pause,
-            // catches where it landed.
-            return reads == 1 ? CGRect(x: 10, y: 20, width: 150, height: 200) : target
-        },
-        writePosition: { _ in },
-        writeSize: { _ in },
-        pause: { pauses += 1 }
-    )
-
-    let result = applier.apply(target)
-
-    #expect(result.frame == target)
-    // Still one attempt: the second look is not a retry, and nothing was
-    // written twice.
-    #expect(result.attemptsUsed == 1)
-    #expect(pauses == 1)
-    #expect(reads == 2)
-}
-
-@Test func aWindowThatCannotBeResizedIsAtLeastPlacedWhereItWasSent() {
-    // Slack's height is frozen: it will not grow and it will not shrink. Asked
-    // five times for an impossible height at a fixed origin, it ended up at five
-    // different positions, because each rejected resize left it recovering
-    // wherever. The fix is to stop insisting once the answer is known.
-    let window = RefusesToResize(CGRect(x: -3360, y: -825, width: 1028, height: 1290))
-    let target = CGRect(x: -3360, y: -1395, width: 1680, height: 1860)
-
-    let result = window.applier().apply(target)
-
-    // The size is still wrong and that is not fixable here. The position is not.
-    #expect(result.frame?.origin == target.origin)
-    #expect(result.frame?.size == CGSize(width: 1028, height: 1290))
-}
-
-@Test func thePlacementIsTheSameEveryTimeItIsAsked() {
-    // The actual complaint was not that the window was the wrong size, it was
-    // that the same shortcut did something different each time. One window, the
-    // same request three times over, must come to rest in one place.
-    let window = RefusesToResize(CGRect(x: -3360, y: -825, width: 1028, height: 1290))
-    let target = CGRect(x: -1680, y: -1395, width: 1680, height: 1860)
-
-    let landings = (0..<3).map { _ in window.applier().apply(target).frame }
-
-    #expect(Set(landings.map { $0?.origin.y }).count == 1)
-    #expect(landings.allSatisfy { $0?.origin == target.origin })
-}
-
-@Test func aWindowThatTookTheSizeIsNotGivenAnExtraWrite() {
-    // The settling write is for refusals only. A compliant window must not pay
-    // an extra round trip, nor a pause, for a problem it does not have.
-    let window = Cooperative(CGRect(x: 0, y: 0, width: 100, height: 100))
-
-    let result = window.applier().apply(CGRect(x: 10, y: 20, width: 300, height: 400))
-
-    #expect(result.attemptsUsed == 1)
-    #expect(window.positionWrites == 2)
-    #expect(window.pauses == 0)
 }
