@@ -11,6 +11,14 @@ private func drag(_ editor: inout Editor, from a: CGPoint, to b: CGPoint) {
     editor.pointerUp(at: b)
 }
 
+/// Arm a tool and drag one shape out of it. Tools are one-shot, so every shape
+/// needs its own `select(tool:)` — that is the behaviour, not boilerplate.
+private func draw(_ editor: inout Editor, _ tool: Tool,
+                  from a: CGPoint, to b: CGPoint) {
+    editor.select(tool: tool)
+    drag(&editor, from: a, to: b)
+}
+
 private let p10 = CGPoint(x: 10, y: 10)
 private let p90 = CGPoint(x: 90, y: 90)
 
@@ -85,9 +93,9 @@ private let p90 = CGPoint(x: 90, y: 90)
 
 @Test func clickingSelectsTheTopmostShape() {
     var editor = Editor()
-    editor.select(tool: .rectangle)
-    drag(&editor, from: p10, to: p90)                                    // 0: underneath
-    drag(&editor, from: CGPoint(x: 20, y: 20), to: CGPoint(x: 80, y: 80)) // 1: on top
+    draw(&editor, .rectangle, from: p10, to: p90)                     // 0: underneath
+    draw(&editor, .rectangle, from: CGPoint(x: 20, y: 20),
+         to: CGPoint(x: 80, y: 80))                                   // 1: on top
 
     editor.select(tool: .select)
     editor.pointerDown(at: CGPoint(x: 50, y: 50))
@@ -220,9 +228,9 @@ private let p90 = CGPoint(x: 90, y: 90)
     // Rust's undo pops the newest annotation, so after moving a shape ⌘Z
     // deletes an unrelated one and the move stands. Snapshots fix that.
     var editor = Editor()
-    editor.select(tool: .rectangle)
-    drag(&editor, from: p10, to: CGPoint(x: 40, y: 40))   // shape A
-    drag(&editor, from: CGPoint(x: 60, y: 60), to: CGPoint(x: 90, y: 90)) // shape B
+    draw(&editor, .rectangle, from: p10, to: CGPoint(x: 40, y: 40))       // shape A
+    draw(&editor, .rectangle, from: CGPoint(x: 60, y: 60),
+         to: CGPoint(x: 90, y: 90))                                       // shape B
     #expect(editor.annotations.count == 2)
 
     editor.select(tool: .select)
@@ -239,9 +247,8 @@ private let p90 = CGPoint(x: 90, y: 90)
 
 @Test func undoAndRedoWalkTheHistoryBothWays() {
     var editor = Editor()
-    editor.select(tool: .rectangle)
-    drag(&editor, from: p10, to: CGPoint(x: 40, y: 40))
-    drag(&editor, from: CGPoint(x: 50, y: 50), to: CGPoint(x: 80, y: 80))
+    draw(&editor, .rectangle, from: p10, to: CGPoint(x: 40, y: 40))
+    draw(&editor, .rectangle, from: CGPoint(x: 50, y: 50), to: CGPoint(x: 80, y: 80))
     #expect(editor.annotations.count == 2)
 
     editor.undo()
@@ -259,13 +266,12 @@ private let p90 = CGPoint(x: 90, y: 90)
 
 @Test func aNewEditReplacesTheRedoBranch() {
     var editor = Editor()
-    editor.select(tool: .rectangle)
-    drag(&editor, from: p10, to: CGPoint(x: 40, y: 40))
-    drag(&editor, from: CGPoint(x: 50, y: 50), to: CGPoint(x: 80, y: 80))
+    draw(&editor, .rectangle, from: p10, to: CGPoint(x: 40, y: 40))
+    draw(&editor, .rectangle, from: CGPoint(x: 50, y: 50), to: CGPoint(x: 80, y: 80))
     editor.undo()
     #expect(editor.canRedo)
 
-    drag(&editor, from: CGPoint(x: 60, y: 10), to: CGPoint(x: 90, y: 40))
+    draw(&editor, .rectangle, from: CGPoint(x: 60, y: 10), to: CGPoint(x: 90, y: 40))
     #expect(!editor.canRedo, "drawing after an undo must not leave a stale redo")
     #expect(editor.annotations.count == 2)
 }
@@ -379,4 +385,143 @@ private let p90 = CGPoint(x: 90, y: 90)
     #expect(!editor.canRedo)
     #expect(editor.selected == nil)
     #expect(editor.tool == .select)
+}
+
+// MARK: One-shot tools
+
+// Every tool hands itself back to select as soon as it has made one thing. The
+// three rules: select is the resting tool, a drawn shape ends the tool, and a
+// label ends it when the text is committed rather than when it is placed.
+
+@Test func selectIsTheRestingTool() {
+    let editor = Editor()
+    #expect(editor.tool == .select)
+}
+
+@Test func drawingAShapeHandsTheToolBack() {
+    var editor = Editor()
+    editor.select(tool: .rectangle)
+    drag(&editor, from: p10, to: p90)
+    #expect(editor.tool == .select, "the rectangle tool stayed armed after drawing")
+    #expect(editor.annotations.count == 1)
+}
+
+@Test func everyDragToolIsOneShot() {
+    for tool in [Tool.arrow, .rectangle, .ellipse, .pencil, .highlight, .blur] {
+        var editor = Editor()
+        editor.select(tool: tool)
+        drag(&editor, from: p10, to: p90)
+        #expect(editor.tool == .select, "\(tool) stayed armed")
+    }
+}
+
+@Test func theShapeJustDrawnIsLeftSelected() {
+    // The point of going back to select: what you just drew is what you are
+    // most likely to nudge or recolour next, with no extra click.
+    var editor = Editor()
+    editor.select(tool: .rectangle)
+    drag(&editor, from: p10, to: p90)
+    #expect(editor.selected == 0)
+}
+
+@Test func aDiscardedSliverDoesNotHandTheToolBack() {
+    // Nothing was drawn, so the tool must stay armed — otherwise a slightly
+    // twitchy click silently disarms and the next drag moves the region.
+    var editor = Editor()
+    editor.select(tool: .rectangle)
+    drag(&editor, from: p10, to: CGPoint(x: 11, y: 11))
+    #expect(editor.annotations.isEmpty)
+    #expect(editor.tool == .rectangle, "a discarded sliver spent the tool")
+}
+
+@Test func placingAStepHandsTheToolBack() {
+    var editor = Editor()
+    editor.select(tool: .step)
+    editor.pointerDown(at: p10)
+    editor.pointerUp(at: p10)
+    #expect(editor.annotations.count == 1)
+    #expect(editor.tool == .select)
+}
+
+@Test func stepsAreArmedOnceEach() {
+    // The flip side: numbering a screenshot 1..3 now takes three presses of
+    // `n`. Confirm the second click really does not add a second badge.
+    var editor = Editor()
+    editor.select(tool: .step)
+    editor.pointerDown(at: p10)
+    editor.pointerUp(at: p10)
+    editor.pointerDown(at: CGPoint(x: 300, y: 300))
+    editor.pointerUp(at: CGPoint(x: 300, y: 300))
+    #expect(editor.annotations.count == 1)
+}
+
+@Test func aTextToolStaysArmedUntilTheTextIsCommitted() {
+    // Placing the caret is not finishing the label: disarming here would make
+    // the very next keystroke a tool shortcut instead of text.
+    var editor = Editor()
+    editor.select(tool: .text)
+    editor.pointerDown(at: p10)
+    #expect(editor.tool == .text, "the text tool was spent before the text existed")
+    #expect(editor.editingText != nil)
+
+    editor.setEditingText("hello")
+    editor.endTextEditing()
+    #expect(editor.tool == .select, "committing the label did not hand the tool back")
+    #expect(editor.annotations.count == 1)
+}
+
+@Test func aCalloutStaysArmedUntilItsTextIsCommitted() {
+    var editor = Editor()
+    editor.select(tool: .callout)
+    drag(&editor, from: p10, to: p90)
+    #expect(editor.tool == .callout, "the callout was spent before its text existed")
+    #expect(editor.editingText != nil)
+
+    editor.setEditingText("note")
+    editor.endTextEditing()
+    #expect(editor.tool == .select)
+}
+
+@Test func anAbandonedLabelLeavesTheToolArmed() {
+    // Typing nothing discards the label, so the tool has made nothing and the
+    // user almost certainly meant to try again.
+    var editor = Editor()
+    editor.select(tool: .text)
+    editor.pointerDown(at: p10)
+    editor.endTextEditing()
+    #expect(editor.annotations.isEmpty)
+    #expect(editor.tool == .text)
+}
+
+@Test func aCommittedLabelIsLeftSelected() {
+    var editor = Editor()
+    editor.select(tool: .text)
+    editor.pointerDown(at: p10)
+    editor.setEditingText("hi")
+    editor.endTextEditing()
+    #expect(editor.selected == 0)
+}
+
+@Test func croppingIsOneShot() {
+    // A crop applies once; staying armed means the next drag re-crops the
+    // region the user just settled on.
+    var editor = Editor()
+    editor.select(tool: .crop)
+    editor.pointerDown(at: p10)
+    editor.pointerDragged(to: p90)
+    let rect = editor.pointerUp(at: p90)
+    #expect(rect != nil)
+    #expect(editor.tool == .select)
+}
+
+@Test func handingTheToolBackAdoptsTheShapeStyle() {
+    // The toolbar mirrors `style`, and the shape is now selected, so the two
+    // have to agree or the swatches show the wrong colour.
+    var editor = Editor()
+    editor.style.color = AnnotationColor.choices[2]
+    editor.style.width = AnnotationStyle.strokeThick
+    editor.select(tool: .rectangle)
+    drag(&editor, from: p10, to: p90)
+    #expect(editor.style.color == AnnotationColor.choices[2])
+    #expect(editor.style.width == AnnotationStyle.strokeThick)
 }

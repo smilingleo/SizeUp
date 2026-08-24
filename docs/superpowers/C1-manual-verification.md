@@ -186,30 +186,41 @@ else look broken. Click a tool button, then *without clicking the screenshot
 again* press `r`, then `Escape`. The tool must change and Escape must still back
 out. If keys do nothing after a toolbar click, the panel took first responder.
 
-## 10. Every tool draws
+## 10. Tools are one-shot
+Press `r`, drag a rectangle. The toolbar highlight should jump back to Select on
+mouse up, and the rectangle you just drew should be selected. Now drag inside
+it: that must *move* it, not draw a second rectangle on top. Repeat for the
+text tool — there the tool must stay armed while you are typing, and hand
+itself back only when you press Return. Escape with a tool armed puts the
+pointer back to Select rather than abandoning the capture.
+
+Numbering a screenshot 1,2,3 therefore needs `n` pressed before each badge.
+That is the accepted cost of never drawing a shape you did not mean to.
+
+## 11. Every tool draws
 Arrow, rectangle, ellipse, pencil, highlight, blur, step, text, callout. Drag
 each out inside the region. Then: click a shape to select it, drag it, drag a
 handle to resize it, press Delete. Pick a new colour with a shape selected — it
 should restyle that shape, not just the next one.
 
-## 11. Text and CJK
+## 12. Text and CJK
 Pick the text tool, click, and type. Then paste or type CJK and confirm the
 input method works and the glyphs are not boxes. Press Escape once: it should
 end the text, not cancel the capture. Escape again deselects, a third dismisses.
 
-## 12. What lands on the clipboard
+## 13. What lands on the clipboard
 The point of the whole feature. Draw several shapes, press Return, and paste
 into Preview or Mail. Every shape must be there, at the size and position you
 drew it, and the image must be the region only. Do this on both a Retina and an
 external non-Retina display: a wrong scale factor puts the shapes in the right
 place on one and the wrong place on the other.
 
-## 13. The blur really obscures
+## 14. The blur really obscures
 Blur over some small text, confirm, and paste. The text must be unreadable
 mosaic blocks — not a soft smear that can be sharpened back. Check that a shape
 drawn *over* a blurred area is not itself mosaicked.
 
-## 14. Undo
+## 15. Undo
 Draw, move, resize, delete. ⌘Z should walk back through all four kinds of
 change, not just remove the last shape drawn. ⇧⌘Z redoes; drawing something new
 after an undo must drop the redo stack.

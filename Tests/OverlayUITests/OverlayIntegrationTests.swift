@@ -226,16 +226,18 @@ private final class Harness {
             "a crop cannot grow the region beyond what was captured")
 }
 
+/// A delegate that just records what it was told.
+private final class Spy: OverlayViewDelegate {
+    var dismissed = false
+    func overlayView(_ view: OverlayView, didChangeSelection rect: CGRect?) {}
+    func overlayViewDidDismiss(_ view: OverlayView) { dismissed = true }
+    func overlayViewDidConfirm(_ view: OverlayView) {}
+    func overlayViewDidSave(_ view: OverlayView) {}
+}
+
 // MARK: Escape
 
 @Test @MainActor func escapeBacksOutOneLayerAtATime() {
-    final class Spy: OverlayViewDelegate {
-        var dismissed = false
-        func overlayView(_ view: OverlayView, didChangeSelection rect: CGRect?) {}
-        func overlayViewDidDismiss(_ view: OverlayView) { dismissed = true }
-        func overlayViewDidConfirm(_ view: OverlayView) {}
-        func overlayViewDidSave(_ view: OverlayView) {}
-    }
     let h = Harness()
     let spy = Spy()
     h.view.delegate = spy
@@ -304,4 +306,69 @@ private final class Harness {
     } else {
         Issue.record("expected a text annotation")
     }
+}
+
+// MARK: One-shot tools, through the view
+
+@Test @MainActor func returnCommitsTheLabelRatherThanTheCapture() {
+    // While the text view holds first responder the overlay's keyDown never
+    // runs, so without the doCommandBy hook there is no way to finish a label
+    // from the keyboard at all.
+    let h = Harness()
+    h.drag(from: CGPoint(x: 50, y: 50), to: CGPoint(x: 350, y: 250))
+    h.view.editor.select(tool: .text)
+    h.click(CGPoint(x: 120, y: 120))
+
+    let field = try! #require(h.view.textViewForTesting)
+    field.string = "hello"
+    h.view.textDidChange(Notification(name: NSText.didChangeNotification, object: field))
+
+    let handled = h.view.textView(field, doCommandBy: #selector(NSResponder.insertNewline(_:)))
+    #expect(handled, "Return must be consumed, not inserted as a newline")
+    #expect(h.view.textViewForTesting == nil, "the label should have been committed")
+    #expect(h.view.editor.tool == .select, "committing should hand the tool back")
+    #expect(h.view.annotations.count == 1)
+    if case let .text(_, text) = h.view.annotations[0].kind {
+        #expect(text == "hello")
+    } else {
+        Issue.record("expected a text annotation")
+    }
+}
+
+@Test @MainActor func drawingAShapeReturnsTheToolbarToSelect() {
+    let h = Harness()
+    h.drag(from: CGPoint(x: 50, y: 50), to: CGPoint(x: 350, y: 250))
+    h.view.editor.select(tool: .rectangle)
+    h.drag(from: CGPoint(x: 100, y: 100), to: CGPoint(x: 200, y: 180))
+    #expect(h.view.annotations.count == 1)
+    #expect(h.view.editor.tool == .select)
+}
+
+@Test @MainActor func aSecondDragAfterDrawingMovesTheShapeInsteadOfDrawingAnother() {
+    // The accident this change exists to prevent: with the tool still armed,
+    // the click meant to adjust a shape drew another one on top of it.
+    let h = Harness()
+    h.drag(from: CGPoint(x: 50, y: 50), to: CGPoint(x: 350, y: 250))
+    h.view.editor.select(tool: .rectangle)
+    h.drag(from: CGPoint(x: 100, y: 100), to: CGPoint(x: 200, y: 180))
+    h.drag(from: CGPoint(x: 150, y: 140), to: CGPoint(x: 170, y: 160))
+    #expect(h.view.annotations.count == 1, "the second drag drew a second shape")
+    if case let .rect(origin, _) = h.view.annotations[0].kind {
+        #expect(origin.x > 100, "the second drag should have moved it")
+    }
+}
+
+@Test @MainActor func escapeDisarmsTheToolBeforeAbandoningTheCapture() {
+    let h = Harness()
+    let spy = Spy()
+    h.view.delegate = spy
+    h.drag(from: CGPoint(x: 50, y: 50), to: CGPoint(x: 350, y: 250))
+    h.view.editor.select(tool: .arrow)
+
+    h.key(53)   // Escape: puts the pointer back
+    #expect(h.view.editor.tool == .select)
+    #expect(!spy.dismissed, "Escape must disarm before it abandons anything")
+
+    h.key(53)   // Escape again: now there is nothing left to back out of
+    #expect(spy.dismissed)
 }

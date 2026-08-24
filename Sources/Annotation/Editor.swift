@@ -89,6 +89,33 @@ public struct Editor {
     }
 
     /// Apply the current style to the selected annotation, if there is one.
+    /// Go back to the select tool, with the annotation just finished left
+    /// selected.
+    ///
+    /// Every tool is one-shot: you arm it, you draw one thing, and you are back
+    /// on select. That is what makes the single-key shortcuts usable — after
+    /// drawing you can immediately drag what you made, or recolour it, without
+    /// first remembering to press `s`. It also removes the commonest accident
+    /// in the Rust original, where the tool stayed armed and the next click
+    /// meant to adjust a shape drew another one on top of it.
+    ///
+    /// Leaving it selected is the other half: the thing you just drew is
+    /// obviously what you want to nudge or restyle next.
+    private mutating func disarm(selecting index: Int?) {
+        tool = .select
+        draft = nil
+        drag = .none
+        if let index, annotations.indices.contains(index) {
+            selected = index
+            // Adopt the shape's style, so the toolbar keeps showing the colour
+            // and weight of what is now selected.
+            style = EditorStyle(color: annotations[index].color,
+                                width: annotations[index].width,
+                                fontSize: annotations[index].fontSize,
+                                opacity: annotations[index].opacity)
+        }
+    }
+
     /// The toolbar calls this so a swatch restyles what is selected rather than
     /// only affecting the next shape drawn.
     public mutating func applyStyleToSelection() {
@@ -124,7 +151,7 @@ public struct Editor {
             annotations.append(Annotation(kind: .step(center: point, radius: AnnotationStyle.stepRadius),
                                           color: style.color, width: style.width,
                                           fontSize: style.fontSize, opacity: style.opacity))
-            drag = .none
+            disarm(selecting: annotations.count - 1)
             return true
 
         case .text:
@@ -230,8 +257,12 @@ public struct Editor {
             checkpoint()
             annotations.append(shape)
             if case .callout = shape.kind {
+                // Not finished yet: a callout without its text is half-made, so
+                // the tool stays armed until `endTextEditing`.
                 selected = annotations.count - 1
                 editingText = annotations.count - 1
+            } else {
+                disarm(selecting: annotations.count - 1)
             }
             return nil
 
@@ -240,6 +271,9 @@ public struct Editor {
             cropDraft = nil
             // Ignore a click or a sliver; cropping to nothing is never meant.
             guard let rect, rect.width >= 5, rect.height >= 5 else { return nil }
+            // A crop applies once. Leaving it armed means the next drag
+            // silently re-crops the region the user just settled on.
+            disarm(selecting: nil)
             return rect
 
         case .moving, .resizing:
@@ -302,7 +336,12 @@ public struct Editor {
             // drop that too: creating and abandoning an empty label is not an
             // edit worth an undo step.
             if !undoStack.isEmpty { undoStack.removeLast() }
+            // Nothing was made, so the tool stays armed: the user typed
+            // nothing and almost certainly meant to try again.
+            return
         }
+        // The label is finished, so the tool that placed it is spent.
+        disarm(selecting: i)
     }
 
     // MARK: Editing commands

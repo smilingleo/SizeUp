@@ -63,6 +63,9 @@ public final class OverlayView: NSView {
 
     private var textView: NSTextView?
 
+    /// The live text editor, for tests that drive the label path.
+    public var textViewForTesting: NSTextView? { textView }
+
     /// Tolerance for grabbing a resize handle.
     private let handleTolerance: CGFloat = 6
 
@@ -241,6 +244,15 @@ public final class OverlayView: NSView {
             }
             if editor.selected != nil {
                 editor.clearSelection()
+                notifyEditorChanged()
+                needsDisplay = true
+                return
+            }
+            // An armed tool is a layer too, now that select is the resting
+            // state: Escape should put the pointer back before it starts
+            // throwing the capture away.
+            if editor.tool != .select {
+                editor.select(tool: .select)
                 notifyEditorChanged()
                 needsDisplay = true
                 return
@@ -532,6 +544,32 @@ extension OverlayView: NSTextViewDelegate {
         guard let view = textView else { return }
         editor.setEditingText(view.string)
         needsDisplay = true
+    }
+
+    public func textView(_ view: NSTextView, doCommandBy selector: Selector) -> Bool {
+        // While the text view holds first responder, the overlay's own keyDown
+        // never runs — so Return has to be caught here or there is no way to
+        // finish a label with the keyboard at all.
+        //
+        // Return commits and hands the tool back to select. A literal newline
+        // is still reachable with Shift- or Option-Return, which is what keeps
+        // multi-line labels and callouts possible.
+        if selector == #selector(NSResponder.insertNewline(_:)) {
+            let flags = NSApp.currentEvent?.modifierFlags ?? []
+            if flags.contains(.shift) || flags.contains(.option) {
+                view.insertText("\n", replacementRange: view.selectedRange())
+                return true
+            }
+            endTextEditing()
+            return true
+        }
+        // Escape reaches the text view first too; route it to the same
+        // one-layer-at-a-time backing out the overlay does.
+        if selector == #selector(NSResponder.cancelOperation(_:)) {
+            endTextEditing()
+            return true
+        }
+        return false
     }
 }
 
