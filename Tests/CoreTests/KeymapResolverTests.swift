@@ -318,3 +318,49 @@ extension Action {
     #expect(displaced == [.space(.above)])
     #expect(next.filter { $0.action == .space(.above) }.count == 1)
 }
+
+// MARK: - The capture side of the merge
+
+@Test func bindingACaptureShortcutToAWindowActionDisplacesTheCaptureAction() throws {
+    // The unified conflict detection the design promises: the resolver sees all
+    // 18 actions, so a user who records ⌃⌘A (Screenshot's default) for a window
+    // action does not silently kill screenshot capture — the capture action is
+    // reported displaced, exactly as a window/window collision is today.
+    let screenshot = try #require(
+        DefaultKeymap.bindings.first { $0.1 == .captureScreenshot }?.0
+    )
+    let (overrides, displaced) = KeymapResolver.assigning(
+        screenshot, to: .half(.left), in: []
+    )
+
+    #expect(displaced == [.captureScreenshot])
+    let resolution = KeymapResolver.resolve(overrides: overrides)
+    // The capture action is unbound (its default was the key we just took)…
+    #expect(resolution.shortcut(for: .captureScreenshot) == nil)
+    // …and the window action now holds it.
+    #expect(resolution.shortcut(for: .half(.left)) == screenshot)
+    #expect(resolution.conflicts.isEmpty)
+}
+
+@Test func aFullKeymapHoldsEighteenActions() {
+    // 15 window actions + 3 capture actions. The four dead SizeUp bindings
+    // (display/space above/below) have no default and so add no rows; the
+    // count is the stable "what does this keymap actually bind" figure.
+    #expect(DefaultKeymap.bindings.count == 18)
+    let resolved = KeymapResolver.resolve(overrides: [])
+    #expect(resolved.bindings.count == 18)
+    // Every one of the 18 is bound (none ship unbound by default).
+    #expect(resolved.bindings.allSatisfy { $0.shortcut != nil })
+}
+
+@Test func restoringDefaultsRecoversAllEighteenBindings() {
+    // `restoreDefaults` writes an empty overrides list, which resolves to the
+    // full default keymap — all 18, none nil. This is the round trip the
+    // Shortcuts tab's "Restore Defaults" button depends on.
+    let resolution = KeymapResolver.resolve(overrides: [])
+    #expect(resolution.bindings.count == 18)
+    #expect(resolution.bindings.allSatisfy { $0.shortcut != nil })
+    for (defaultShortcut, action) in DefaultKeymap.bindings {
+        #expect(resolution.shortcut(for: action) == defaultShortcut)
+    }
+}

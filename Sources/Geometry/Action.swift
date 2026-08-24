@@ -18,6 +18,16 @@ public enum Action: Sendable, Equatable {
     case snapBack
     case display(Direction)
     case space(Direction)
+    // The capture side of the merge (ClipShot). These are routing identifiers
+    // only: they are never frame math, so `isPlacement` is false for them, and
+    // they do not participate in the size cycle. `ActionRouter.perform` and
+    // `FrameMath` must both refuse them — a capture action has no window frame
+    // to apply — which is exactly why the exhaustive switches carry explicit
+    // no-op arms for them rather than a `default:` that would swallow a future
+    // mistake.
+    case captureScreenshot
+    case startRecording
+    case toggleScrollCapture
 
     /// True when repeated presses should advance through the fraction list.
     /// Only halves cycle: a cycling quarter varies on two axes and its
@@ -38,7 +48,22 @@ public enum Action: Sendable, Equatable {
     public var isPlacement: Bool {
         switch self {
         case .half, .quarter, .center, .fullScreen: return true
-        case .snapBack, .display, .space: return false
+        // Snap back, the moves, and the capture actions all leave the frame
+        // untouched by `targetFrame`; App dispatches capture actions to the
+        // capture session before the router is ever asked.
+        case .snapBack, .display, .space, .captureScreenshot, .startRecording,
+             .toggleScrollCapture: return false
+        }
+    }
+
+    /// True for the three capture actions. `App` routes them to the capture
+    /// session (region overlay / recording) rather than the window router, which
+    /// has no frame math for them.
+    public var isCapture: Bool {
+        switch self {
+        case .captureScreenshot, .startRecording, .toggleScrollCapture: return true
+        case .half, .quarter, .center, .fullScreen, .snapBack, .display, .space:
+            return false
         }
     }
 }

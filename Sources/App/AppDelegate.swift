@@ -4,18 +4,25 @@ import Core
 import Geometry
 import Hotkeys
 import WindowKit
+import Capture
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let hotkeys = HotkeyManager()
     private let store = WindowStateStore()
-    private let settings = SettingsStore(url: SettingsStore.defaultURL)
+    // `legacyURL` is the pre-rename location. `migrateFromLegacy()` moves it in at
+    // launch, so a rename never loses a preference; then `load()` reads the new spot.
+    private let settings = SettingsStore(
+        url: SettingsStore.defaultURL,
+        legacyURL: SettingsStore.legacyDefaultURL
+    )
     private var statusItem: NSStatusItem?
     /// Held so `menuNeedsUpdate` can refresh it without rebuilding the menu.
-    private weak var launchAtLoginItem: NSMenuItem?
-    /// Surfaced in the login item's tooltip; an NSLog-only error is invisible.
-    private var lastLaunchAtLoginError: String?
     private var router: ActionRouter!
+    /// Owns the capture side of the merge: the state machine, the overlay, and
+    /// the clipboard/save. C1 wires the screenshot flow; the menu and status
+    /// icon derive from `session.mode`.
+    private let session = CaptureSession(capabilities: [.screenshot, .recording])
     /// Constructed lazily (see `showPreferences`) so it captures
     /// `rebuildRouter` only once the router's dependencies are ready, and
     /// reused thereafter so a second click reuses the same window.
@@ -27,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        settings.migrateFromLegacy()
         settings.load()
         rebuildRouter()
         // Before the status item is built, and independently of whether
@@ -45,6 +53,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         )
 
         makeStatusItem()
+        // A mode change (capture starting or finishing) redraws the icon and
+        // refreshes the menu; the delegate's refreshes are idempotent, so the
+        // session can over-notify freely.
+        session.modeDidChange = { [weak self] _ in
+            self?.updateStatusIcon()
+            self?.rebuildMenu()
+        }
+        // The recorder reads the cursor and click-ripple toggles at the moment a
+        // recording starts, so changing them takes effect on the next recording
+        // without any wiring to invalidate.
+        session.captureSettings = { [weak self] in
+            self?.settings.settings.capture ?? Config.CaptureSettings()
+        }
 
         if AccessibilityPermission.isGranted {
             registerHotkeys()
@@ -135,7 +156,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let shortcut = binding.shortcut else { continue }
             let action = binding.action
             hotkeys.register(shortcut) { [weak self] in
-                self?.router.perform(action)
+                guard let self else { return }
+                // Capture actions go to the session (which enforces the mode
+                // exclusions); window actions to the router. This is the split
+                // the design calls out: a capture hotkey in the wrong state is
+                // ignored there, a window hotkey is simply performed.
+                if action.isCapture {
+                    self.session.perform(action)
+                } else {
+                    self.router.perform(action)
+                }
             }
         }
         updateStatusIcon()
@@ -179,10 +209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func makeStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = NSImage(
-            systemSymbolName: "rectangle.split.2x1",
-            accessibilityDescription: "Sizeup2"
-        )
+        item.button?.image = statusIconImage(hasProblem: false)
         statusItem = item
         rebuildMenu()
     }
@@ -193,141 +220,84 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// own icon switches to a warning symbol.
     private func updateStatusIcon() {
         let hasProblem = !hotkeys.registrationFailures.isEmpty || hotkeys.handlerInstallFailed
-        let symbolName = hasProblem ? "exclamationmark.triangle" : "rectangle.split.2x1"
         let description = hasProblem
-            ? "Sizeup2 (a shortcut could not be claimed)"
-            : "Sizeup2"
-        statusItem?.button?.image = NSImage(
-            systemSymbolName: symbolName,
-            accessibilityDescription: description
-        )
+            ? "ClipShot (a shortcut could not be claimed)"
+            : "ClipShot"
+        statusItem?.button?.image = statusIconImage(hasProblem: hasProblem, description: description)
+    }
+
+    /// The menu-bar image. The normal state is ClipShot's own template asset;
+    /// the problem state is a system warning symbol (assets cannot be tinted a
+    /// different *state*, and a template asset that turns into a triangle is
+    /// the clearest "something broke" signal). A missing asset falls back to
+    /// the old split-rectangle symbol so the icon is never blank.
+    private func statusIconImage(hasProblem: Bool, description: String = "ClipShot") -> NSImage? {
+        if hasProblem {
+            return NSImage(
+                systemSymbolName: "exclamationmark.triangle",
+                accessibilityDescription: description
+            )
+        }
+        // The design's second icon state: a recording or scroll capture in
+        // flight shows a record dot instead of the normal asset. C1 never
+        // reaches it (only `.capturing` is reachable), but deriving it from the
+        // mode means C3 lights it up with no further change here.
+        if session.mode == .recording || session.mode == .scrollCapturing {
+            return NSImage(
+                systemSymbolName: "record.circle.fill",
+                accessibilityDescription: description
+            )
+        }
+        if let asset = Self.bundleTemplateIcon(named: "statusbar_icon") {
+            asset.accessibilityDescription = description
+            return asset
+        }
+        return NSImage(systemSymbolName: "rectangle.split.2x1", accessibilityDescription: description)
+    }
+
+    /// Loads a bundled PNG as a 21×21 template image. `nil` if the asset is
+    /// absent (the caller then falls back to a system symbol).
+    private static func bundleTemplateIcon(named name: String) -> NSImage? {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "png"),
+              let image = NSImage(contentsOf: url)
+        else { return nil }
+        image.size = NSSize(width: 21, height: 21)
+        image.isTemplate = true
+        return image
     }
 
     private func rebuildMenu() {
-        let menu = NSMenu()
-        // Without this, AppKit recomputes every item's enabled state from
-        // whether its target responds to the action, which silently discards
-        // the `isEnabled = false` set on the login item below.
-        menu.autoenablesItems = false
+        // The menu is big enough now (capture section, three submenus, a
+        // recording-state collapse) to have its own type: `MenuBuilder` is a
+        // pure function of this state. `menu.autoenablesItems = false` is set
+        // there, and `menu.delegate = self` lets `menuNeedsUpdate` refresh the
+        // one stateful row without rebuilding.
+        let context = MenuBuilder.Context(
+            keymap: keymap,
+            hasAccessibility: AccessibilityPermission.isGranted,
+            handlerInstallFailed: hotkeys.handlerInstallFailed,
+            registrationFailures: hotkeys.registrationFailures,
+            spacesAvailable: spaces.isAvailable,
+            sessionMode: session.mode
+        )
+        let menu = MenuBuilder().build(context, target: self)
         menu.delegate = self
-
-        if !AccessibilityPermission.isGranted {
-            let warning = NSMenuItem(
-                title: "Waiting for Accessibility permission…",
-                action: #selector(openAccessibilitySettings),
-                keyEquivalent: ""
-            )
-            warning.target = self
-            menu.addItem(warning)
-            menu.addItem(.separator())
-        }
-
-        if hotkeys.handlerInstallFailed {
-            let warning = NSMenuItem(
-                title: "⚠️ No shortcuts can work: the hotkey system failed to install.",
-                action: nil,
-                keyEquivalent: ""
-            )
-            // Explicit, because `autoenablesItems` is off: an informational
-            // banner would otherwise draw as an enabled, clickable-looking row.
-            warning.isEnabled = false
-            menu.addItem(warning)
-            menu.addItem(.separator())
-        }
-
-        for binding in keymap.bindings {
-            let action = binding.action
-            let item = NSMenuItem(
-                title: DefaultKeymap.title(for: action),
-                action: #selector(menuAction(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.representedObject = ActionBox(action: action)
-            // An action the user deliberately unbound stays listed and clickable —
-            // the menu is the only way to invoke it once it has no key.
-            item.toolTip = binding.shortcut?.displayString ?? "No shortcut"
-            if binding.shortcut == nil { item.title += "  (no shortcut)" }
-            // When the handler failed to install, every shortcut carries that
-            // same reason and the banner above already says so once. Repeating
-            // it on every item buries the banner.
-            if !hotkeys.handlerInstallFailed, let shortcut = binding.shortcut,
-                let failure = hotkeys.failure(for: shortcut) {
-                // Name the reason. "unavailable" gave the user no way to tell a
-                // bug in our keymap from SizeUp still holding the shortcut.
-                item.title += "  (\(failure.explanation))"
-            }
-            // A Spaces action whose private API did not resolve would otherwise
-            // sit there looking identical to one that works, and do nothing when
-            // clicked. Saying so is the difference between a known limitation on
-            // a future macOS and an apparently broken app.
-            if case .space = action, !spaces.isAvailable {
-                item.title += "  (unavailable on this macOS)"
-                item.toolTip =
-                    "Sizeup2 moves windows between Spaces using a private system interface "
-                    + "that this version of macOS does not provide."
-            }
-            menu.addItem(item)
-        }
-
-        menu.addItem(.separator())
-
-        let settingsItem = NSMenuItem(
-            title: "Settings…",
-            action: #selector(showPreferences),
-            keyEquivalent: ","
-        )
-        settingsItem.keyEquivalentModifierMask = .command
-        settingsItem.target = self
-        // `autoenablesItems` is off (set where the menu is created), so every new item needs
-        // this set explicitly or it renders greyed out and unclickable.
-        // This exact bug has shipped twice already in this project (the
-        // shortcut menu, then the login item) — see the M3 plan.
-        settingsItem.isEnabled = true
-        menu.addItem(settingsItem)
-
-        let importItem = NSMenuItem(
-            title: "Import Shortcuts from SizeUp…",
-            action: #selector(importFromSizeUp),
-            keyEquivalent: ""
-        )
-        importItem.target = self
-        // Offered only when there is something to import. Shown-but-disabled
-        // rather than hidden, so a user who expected it can see that it exists
-        // and that SizeUp's preferences were not found, rather than concluding
-        // the feature is missing.
-        let sizeUpPresent = FileManager.default.fileExists(
-            atPath: SizeUpImporter.defaultURL.path
-        )
-        importItem.isEnabled = sizeUpPresent
-        if !sizeUpPresent {
-            importItem.toolTip = "No SizeUp preferences found at \(SizeUpImporter.defaultURL.path)"
-        }
-        menu.addItem(importItem)
-
-        let launch = NSMenuItem(
-            title: "Open at Login",
-            action: #selector(toggleLaunchAtLogin),
-            keyEquivalent: ""
-        )
-        launch.target = self
-        menu.addItem(launch)
-        launchAtLoginItem = launch
-        refreshLaunchAtLoginItem()
-
-        let quit = NSMenuItem(title: "Quit Sizeup2", action: #selector(quit), keyEquivalent: "q")
-        quit.target = self
-        menu.addItem(quit)
-
         statusItem?.menu = menu
     }
 
-    @objc private func menuAction(_ sender: NSMenuItem) {
-        guard let box = sender.representedObject as? ActionBox else { return }
-        router.perform(box.action)
+    @objc func menuAction(_ sender: NSMenuItem) {
+        guard let box = sender.representedObject as? ActionBox, let action = box.action else { return }
+        // Capture actions route to the session (a region overlay / recording);
+        // window actions to the router. `Action` is the shared identifier the
+        // keymap and the menu both speak.
+        if action.isCapture {
+            session.perform(action)
+        } else {
+            router.perform(action)
+        }
     }
 
-    @objc private func showPreferences() {
+    @objc func showPreferences() {
         if preferencesWindow == nil {
             preferencesWindow = PreferencesWindow(
                 store: settings,
@@ -351,134 +321,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         preferencesWindow?.show()
     }
 
-    /// Confirms, imports, then reports — all three, because this replaces
-    /// shortcuts the user may have spent time setting up.
-    ///
-    /// An `NSAlert` rather than the tooltips M2 settled on for the login item:
-    /// that state changes behind the app's back and has no moment to interrupt,
-    /// whereas this is a destructive action the user just chose, so the one
-    /// moment they are definitely looking is now.
-    @objc private func importFromSizeUp() {
-        let result = SizeUpImporter.read(at: SizeUpImporter.defaultURL)
-
-        guard !result.overrides.isEmpty else {
-            let empty = NSAlert()
-            empty.messageText = "Nothing to import"
-            empty.informativeText = result.skipped.isEmpty
-                ? "SizeUp's preferences were found but contain no shortcuts."
-                : "None of SizeUp's \(result.skipped.count) shortcut entries could be read."
-            empty.runModal()
-            return
+    /// The Help row: opens the ClipShot documentation (the design keeps it; it
+    /// documents the capture side the merge added).
+    @objc func openHelp() {
+        if let url = URL(string: "https://smilingleo.github.io/clipshot-docs/") {
+            NSWorkspace.shared.open(url)
         }
-
-        let confirm = NSAlert()
-        confirm.messageText = "Import \(result.overrides.count) shortcuts from SizeUp?"
-        confirm.informativeText =
-            "This replaces every shortcut currently set in Sizeup2. "
-            + "You can undo it with Restore Defaults in Settings, "
-            + "which returns to Sizeup2's own defaults rather than to whatever you had before."
-        confirm.addButton(withTitle: "Import")
-        confirm.addButton(withTitle: "Cancel")
-        guard confirm.runModal() == .alertFirstButtonReturn else { return }
-
-        let outcome = NSAlert()
-        do {
-            try settings.update { $0.shortcutOverrides = result.overrides }
-            rebuildRouter()
-            registerHotkeys()
-            preferencesWindow?.refresh()
-            outcome.messageText = "Imported \(result.overrides.count) shortcuts"
-            var detail = "Sizeup2 is now using SizeUp's shortcuts."
-            if !result.skipped.isEmpty {
-                // Naming them, because a partial import that looks total is how a
-                // user ends up pressing a key that will never work again.
-                detail += " Skipped \(result.skipped.count): "
-                    + result.skipped.sorted().joined(separator: ", ") + "."
-            }
-            outcome.informativeText = detail
-        } catch {
-            outcome.messageText = "Could not save the imported shortcuts"
-            outcome.informativeText = error.localizedDescription
-            outcome.alertStyle = .warning
-        }
-        outcome.runModal()
     }
 
-    @objc private func openAccessibilitySettings() {
+    @objc func openAccessibilitySettings() {
         let url = URL(
             string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
         )!
         NSWorkspace.shared.open(url)
     }
 
-    /// Re-reads the login-item state from the system.
-    ///
-    /// Called on every menu open, not just at launch: the user can disable the
-    /// login item in System Settings, and a checkmark that kept claiming it was
-    /// on would be exactly the silent failure this feature exists to avoid.
-    private func refreshLaunchAtLoginItem() {
-        guard let item = launchAtLoginItem else { return }
-        let state = LaunchAtLogin.state
+    // The status menu has no stateful rows of its own anymore (the login-item
+    // row and the SizeUp importer moved to Settings in the redesign), so the
+    // `NSMenuDelegate` conformance is retained but does nothing; `rebuildMenu`
+    // still assigns `self` as the delegate, which is harmless.
+    func menuNeedsUpdate(_ menu: NSMenu) {}
+    func menuDidClose(_ menu: NSMenu) {}
 
-        item.title = "Open at Login"
-        // `.mixed` for requiresApproval: registration succeeded but macOS is
-        // waiting for the user to approve it, so neither ticked nor unticked is
-        // honest, and showing it unticked makes the toggle look dead.
-        switch state {
-        case .enabled: item.state = .on
-        case .requiresApproval: item.state = .mixed
-        case .disabled, .unsupported: item.state = .off
-        }
-        // Disabled rather than hidden, so its absence is not mistaken for "off".
-        item.isEnabled = state != .unsupported
-
-        if let advice = LaunchAtLogin.advice {
-            item.toolTip = advice
-            if state == .requiresApproval {
-                item.title += "  (needs approval)"
-            }
-        } else {
-            item.toolTip = nil
-        }
-        if let error = lastLaunchAtLoginError {
-            item.toolTip = error
-            item.title += "  (failed)"
-        }
-    }
-
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        refreshLaunchAtLoginItem()
-    }
-
-    func menuDidClose(_ menu: NSMenu) {
-        // The error describes the click that just happened. Clearing it when the
-        // menu closes stops "(failed)" outliving its cause for the rest of the
-        // session, e.g. after the user fixes the cause in System Settings.
-        lastLaunchAtLoginError = nil
-    }
-
-    @objc private func toggleLaunchAtLogin() {
-        do {
-            try LaunchAtLogin.setEnabled(!LaunchAtLogin.isEnabled)
-            lastLaunchAtLoginError = nil
-        } catch {
-            // Kept so the next menu build can show it. An NSLog-only failure is
-            // invisible in a menu-bar app with no window.
-            lastLaunchAtLoginError = error.localizedDescription
-            NSLog("Sizeup2: could not change the login item: \(error.localizedDescription)")
-        }
-        // Rebuild so the checkmark reflects what the system actually did, not
-        // what we asked for.
-        rebuildMenu()
-    }
-
-    @objc private func quit() {
+    @objc func quit() {
         NSApplication.shared.terminate(nil)
     }
 }
 
-/// `representedObject` needs a reference type to carry an enum payload.
-private final class ActionBox {
-    let action: Action
-    init(action: Action) { self.action = action }
-}

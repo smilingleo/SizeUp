@@ -15,6 +15,8 @@ import Foundation
         .center, .fullScreen, .snapBack,
         .display(.next), .display(.previous), .display(.above), .display(.below),
         .space(.next), .space(.previous), .space(.above), .space(.below),
+        // The capture side of the merge: same round-trip discipline.
+        .captureScreenshot, .startRecording, .toggleScrollCapture,
     ]
     for action in actions {
         let identifier = ActionIdentifier.identifier(for: action)
@@ -24,6 +26,9 @@ import Foundation
 
 @Test func anUnknownActionIdentifierResolvesToNilRatherThanThrowing() {
     #expect(ActionIdentifier.action(for: "half.upsideDown") == nil)
+    // A capture identifier a FUTURE version adds (or a typo) must be ignored,
+    // not crash the settings read: the same rule as every other unknown.
+    #expect(ActionIdentifier.action(for: "capture.diagonal") == nil)
 }
 
 @Test func aShiftOnlyBindingResolvesToNil() {

@@ -1,0 +1,325 @@
+# C1 Manual Verification
+
+A side-by-side pass against the installed Rust ClipShot, which is the
+**behavioral oracle** for the Swift port. C1 delivers the rename, the capture
+foundation, and the screenshot flow; this checklist covers the whole of it.
+
+The unit tests (333 of them) already pin the *pure* logic — the crop math, the
+state machine, the importer, the keymap, the model. What they cannot do is
+put a window on a screen, so **this pass is the part a human runs**: real
+permissions, a real Retina display, a real overlay.
+
+## How to run
+
+```
+make dev
+```
+
+Builds an ad-hoc-signed `ClipShot.app` and installs it to `/Applications`,
+**taking over the path the Rust ClipShot occupies** (the Swift executable is
+`ClipShot`; `pkill -x ClipShot` will not touch the lowercase `clipshot`, so
+the Rust app and the Swift app coexist until you quit one). Launch the
+installed app; it appears as the ClipShot template icon in the menu bar.
+
+> The Rust app is still the oracle for *behavior* (do the two look and act
+> the same?). The Swift app is what you are verifying. Run them side by side.
+
+Work through the seven areas below. Each lists the exact action, the expected
+result, and (where it matters) what to compare against the Rust app.
+
+---
+
+## 1. Rename + settings migration (do this first)
+
+- [ ] **Accessibility grant carries over.** On first launch the app does **not**
+      re-prompt for Accessibility — the existing grant (bound to `com.lliu.sizeup2`)
+      still works. A window action (⌃⌥⌘←) resizes a window with no prompt.
+      If it *does* prompt, the rename changed the identifier and broke the grant —
+      stop and check `Resources/Info.plist`.
+- [ ] **The settings file migrated.** The old `~/Library/Application Support/Sizeup2/settings.json`
+      is gone, and `~/Library/Application Support/ClipShot/settings.json` exists.
+- [ ] **The hand-edited cycle survived.** Your two-span cycle (½ and ⅓, in that
+      order) is exactly what the Shortcuts/Window tab shows. Open **Settings →
+      Window** and confirm both ½ and ⅓ are ticked — a migration that dropped or
+      reordered the cycle would show otherwise.
+- [ ] **No re-grant of Screen Recording** is *expected* — see area 5; the Rust
+      ClipShot's grant does **not** carry over (different bundle ID), so the
+      Swift app will prompt once. That is documented and intended.
+- [ ] **Shortcuts tab is pixel-identical to Sizeup2's** for the 15 window rows
+      (same bindings, same order), now with 3 capture rows added above them.
+
+## 2. Screenshot (the core C1 feature)
+
+- [ ] **⌃⌘A** dims the **display under the cursor** (in a two-display setup, the
+      overlay appears on the correct display, not always the main one).
+- [ ] **The overlay is not upside down.** The dimmed screen matches the real
+      screen (check something asymmetric — the Dock, the menu bar). A flipped
+      view mirrors an `NSImage` unless it is drawn with the one-argument
+      `draw(in:)`; when it mirrors, the crop is mirrored too, because the
+      selection is taken in the coordinates you see. `orientationIsUpright`
+      pins it, but eyeball it once.
+- [ ] **Drag** draws a dashed selection; the complement is dimmed; a size badge
+      shows the **pixel** dimensions (scale factor honored — on a 2× Retina
+      display a 500-pt selection reads ~1000 px).
+- [ ] **Esc** cancels — the overlay disappears and **nothing** is written to the
+      clipboard. Confirm by pasting into Preview: no new image.
+- [ ] **Enter** copies — paste into Preview and the image matches your selection
+      **to the pixel** (the crop uses the backing scale; a mis-scaled crop would
+      be ½ the size or offset).
+- [ ] **⌘S in the overlay** opens the save panel, default name
+      `clipshot-capture-YYYY-MM-DD_HH-mm-ss.png`, and writes a valid PNG.
+- [ ] A **sub-5pt drag** (a plain click) produces nothing — no 1×1 image, no
+      clipboard write.
+
+**Compare to Rust:** take the same region in both apps; the crops should be
+indistinguishable.
+
+## 3. Menu
+
+- [ ] **Capture section** is top-level: Screenshot ⌃⌘A, Record Screen ⌃⌘Z,
+      Scroll Capture ⌃⌘S.
+- [ ] **Three submenus**: `Window ▸` (halves / corners / full screen, center,
+      snap back), `Display ▸` (next / previous), `Spaces ▸` (next / previous).
+      Every one of the 15 window actions is reachable in two clicks.
+- [ ] Each row still shows its shortcut, and the honest suffixes survive the
+      move into submenus: `(no shortcut)` when unbound, `(…reason…)` when
+      another app claimed the keys, `(unavailable on this macOS)` beside a Space
+      item whose private API is absent.
+- [ ] **Help** opens the docs site (`smilingleo.github.io/clipshot-docs`).
+- [ ] **Quit ClipShot** (⌘Q) is labeled ClipShot, not Sizeup2.
+- [ ] The SizeUp importer and "Open at Login" are **gone from the menu** (they
+      moved to Settings → Shortcuts and → General in the redesign).
+
+## 4. Settings (three tabs)
+
+- [ ] **⌘, opens three tabs**: General / Window / Shortcuts.
+- [ ] **General** — the Login toggle (greyed with the ad-hoc-signing tooltip,
+      unchanged behavior); the **Accessibility** row shows "Granted" on this
+      machine with an Open-System-Settings button; the **Screen Recording** row
+      shows its real state. The two **capture toggles** (cursor, click ripples)
+      are on by default and **persist across a relaunch**.
+- [ ] The permission deep links open the **right** pane
+      (`Privacy_Accessibility` / `Privacy_ScreenCapture`).
+- [ ] **Shortcuts** — rebind ⌃⌘A to ⌃⌘K: Screenshot follows the rebind, and
+      because ⌃⌘K is free the displacement message (if any) is accurate. The
+      two import buttons show enabled/disabled + tooltip correctly for whether
+      the SizeUp plist and ClipShot `config.ini` exist.
+- [ ] **Import from SizeUp** and **Import from ClipShot** both do the
+      confirm-then-report flow and replace all overrides, as stated in the
+      confirm dialog.
+
+## 5. Permissions (the clean-user path)
+
+On a second user account, or after removing the app's Screen Recording TCC
+entry (`tccutil reset ScreenCapture com.lliu.sizeup2`) and relaunching:
+
+- [ ] The **first ⌃⌘A** shows the system **Screen Recording** prompt (once per
+      launch). It does **not** prompt at app launch — only on a capture attempt.
+- [ ] While Screen Recording is **ungranted**: ⌃⌘A shows the one-time alert
+      (naming the pane, with an "Open System Settings" button) and aborts; the
+      menu **still lists** the capture items.
+- [ ] **Window actions work the whole time** — the two permissions do not
+      cross-gate. With only Accessibility, the app is a full window manager.
+
+## 6. Hotkey failure honesty
+
+- [ ] Hand-edit `settings.json` to bind a capture action to a key another action
+      already holds (e.g. Screenshot and Full Screen both on ⌃⌥⌘←): the menu
+      shows the **claimed-by annotation** on the losing row, and the action
+      doesn't double-fire.
+- [ ] The status icon is the **warning triangle** only when registration itself
+      fails — not for a mere conflict.
+
+## 7. Window-manager regression (M1–M5 unchanged)
+
+- [ ] Halves, quarters, full screen, center, snap back all behave exactly as
+      before the merge.
+- [ ] Multi-display tiling, Size cycling (½/⅓ repeat), gaps, the skip list, and
+      Spaces all behave exactly as M5 left them. **Nothing** about window
+      management changed in C1 — if any of these feels different, it is a bug.
+
+---
+
+## Recording and scroll capture: listed, not yet built
+
+- [ ] **⌃⌘Z (Record Screen)** and **⌃⌘S (Scroll Capture)** are registered and
+      listed, but selecting them (hotkey or menu) shows the one-time
+      **"Coming in a later build"** alert and changes nothing. This is the
+      honest-absence behavior — the key stays bound, the feature does not pretend
+      to exist. (They become live in C3 and C5.)
+
+---
+
+## Done
+
+When all boxes are ticked, C1 is done: the merged app is a daily driver for
+both jobs minus annotation and recording. Then retire the superseded installs —
+the doc and README say so explicitly:
+
+- `/Applications/Sizeup2.app` — superseded by ClipShot (same bundle ID); uninstall.
+- `/Applications/ClipShot.app` (the **Rust** one) — the Swift app now owns this
+  path; the Rust build is the development oracle, not something you run daily.
+  Delete it once you are satisfied C1 is solid. Its Screen Recording grant does
+  **not** transfer to the Swift app (different bundle ID) — that is the one-time
+  re-grant documented in the README.
+
+`swift test` green (333), `swift build -c release` warning-free, and both lints
+pass are the automated half; this pass is the human half.
+
+---
+
+# C2: the annotation editor
+
+The editor was verified by offscreen rendering with pixel assertions, not by
+clicking. What automated tests cannot judge is whether it *feels* right, so
+these are the areas worth an eyeball.
+
+## 8. The toolbar appears with the region
+Press ⌃⌘A, drag out a region. The toolbar should fade in just below the
+selection, or above it when the region is near the bottom of the screen, always
+fully on screen. Two rows: eleven tools, then nine colours plus three stroke
+widths plus a font stepper.
+
+## 9. The toolbar must not steal the keyboard
+This is the one to check first, because it is the failure that makes everything
+else look broken. Click a tool button, then *without clicking the screenshot
+again* press `r`, then `Escape`. The tool must change and Escape must still back
+out. If keys do nothing after a toolbar click, the panel took first responder.
+
+## 10. Tools are one-shot
+Press `r`, drag a rectangle. The toolbar highlight should jump back to Select on
+mouse up, and the rectangle you just drew should be selected. Now drag inside
+it: that must *move* it, not draw a second rectangle on top. Repeat for the
+text tool — there the tool must stay armed while you are typing, and hand
+itself back only when you press Return. Escape with a tool armed puts the
+pointer back to Select rather than abandoning the capture.
+
+Numbering a screenshot 1,2,3 therefore needs `n` pressed before each badge.
+That is the accepted cost of never drawing a shape you did not mean to.
+
+## 11. Every tool draws
+Arrow, rectangle, ellipse, pencil, highlight, blur, step, text, callout. Drag
+each out inside the region. Then: click a shape to select it, drag it, drag a
+handle to resize it, press Delete. Pick a new colour with a shape selected — it
+should restyle that shape, not just the next one.
+
+## 12. Text and CJK
+Pick the text tool, click, and type. Then paste or type CJK and confirm the
+input method works and the glyphs are not boxes. Press Escape once: it should
+end the text, not cancel the capture. Escape again deselects, a third dismisses.
+
+## 13. What lands on the clipboard
+The point of the whole feature. Draw several shapes, press Return, and paste
+into Preview or Mail. Every shape must be there, at the size and position you
+drew it, and the image must be the region only. Do this on both a Retina and an
+external non-Retina display: a wrong scale factor puts the shapes in the right
+place on one and the wrong place on the other.
+
+## 14. The blur really obscures
+Blur over some small text, confirm, and paste. The text must be unreadable
+mosaic blocks — not a soft smear that can be sharpened back. Check that a shape
+drawn *over* a blurred area is not itself mosaicked.
+
+## 15. Undo
+Draw, move, resize, delete. ⌘Z should walk back through all four kinds of
+change, not just remove the last shape drawn. ⇧⌘Z redoes; drawing something new
+after an undo must drop the redo stack.
+
+---
+
+# C3: screen recording
+
+## 16. The round trip
+⌃⌘Z, drag a region, press Return. A red frame should appear around the region
+and the menu-bar icon should change. Work inside the frame for a few seconds,
+then press ⌃⌘Z again. A save dialog should offer
+`clipshot-recording-<timestamp>.mp4`; save it and play it back.
+
+## 17. Length matches reality
+Record for a measured ten seconds. The video must be ten seconds long, not
+noticeably shorter. A short video means frames were dropped rather than
+repeated, which speeds playback up — the failure this is most likely to have.
+
+## 18. The frame is not in the video
+The red border must not appear anywhere in the recording, and it must be
+click-through: you should be able to click something underneath its edge.
+
+## 19. Cursor and clicks
+With both toggles on under Settings → General, the recording should show the
+real cursor and a blue ripple at each click. Hold the mouse button down for a
+second: that must produce *one* ripple, not thirty. Turn each toggle off and
+confirm the corresponding effect disappears from the next recording.
+
+## 20. Nothing is left behind
+Cancel the save dialog. The temporary MP4 must not be left in the temporary
+directory. Also cancel the region picker with Escape — the session must return
+to idle, and a following ⌃⌘A must still work rather than being refused as
+"already in flight".
+
+## 21. Exclusions still hold
+While recording, ⌃⌘A must be refused (no screenshot mid-recording). The Window
+menu collapses to the recording controls.
+
+---
+
+# C4: the recording editor
+
+## 22. It opens
+Stop a recording. The editor window should appear with the first frame showing,
+the tool palette above it, and a timeline underneath. Press Space: it should
+play at roughly real speed and stop at the end.
+
+## 23. Annotations are anchored to moments
+Scrub to a recognisable moment, draw an arrow, then scrub away. The arrow must
+disappear about a second later and reappear when you scrub back. Its bar in the
+timeline must sit under the part of the scrubber where it is visible.
+
+## 24. Retiming, on the mini bar
+Select the arrow. A small dark bar must appear *directly below* it — not over it,
+and not somewhere else in the window — showing the whole recording with the
+arrow's span marked. Drag the right handle to the end: the arrow should now stay
+on screen for the rest of the playback. Drag the left handle past the right one —
+it must refuse rather than let the span collapse. Move the shape and reselect: the
+bar must follow it, and must stay inside the window even for a shape at the edge.
+
+Press **Done** and the bar goes away with the selection.
+
+## 25. Freeze
+Use **Hold** on the mini bar and pick a duration; then check `F` does the same.
+Scrub to a moment and press `F`. The video should get two seconds longer, the
+timeline should show a shaded band, and playing through it should hold that one
+frame and then continue from where it left off — not jump or restart. Any
+annotation *after* the freeze must still be over the same picture as before.
+
+## 26. Speed
+Set 2×. The total time should halve, playback should be visibly faster, and an
+annotation you placed on a moment must still be on that moment. Set it back to
+1× — timings should return to where they were.
+
+## 27. Pulse
+Use **Pulse** on the mini bar; the button should light up while it is on. Then
+check the key does the same: select a shape and press `U`. It should breathe and glow yellow at about 2–3
+times a second, smoothly rather than snapping. Its bar in the timeline gets a
+yellow cap.
+
+## 28. Text and CJK
+Pick the text tool, click, and type — including with an input method. The same
+as the screenshot editor: Return commits, ⇧Return inserts a newline.
+
+## 29. Export matches the canvas
+**This is the highest-risk item.** Export with several annotations, a freeze and a
+non-1× speed. Play the exported
+file: every annotation must appear at the same moment, in the same place and at
+the same size as in the editor, the freeze must be there, and the length must
+match what the editor showed. A progress window should appear during the encode.
+
+## 30. Nothing is lost
+Close the editor with edits pending: it must ask, and then still offer to save
+the original recording. Cancel that save and the recording is gone — which is
+the point of asking twice.
+
+## 31. The exported file is the annotated one
+Export, then open the saved file outside ClipShot. The annotations must be *in*
+it. This regressed once: the save dialog moved the raw recording onto the chosen
+path and the encode then failed, so the file looked right and had nothing drawn
+on it. Check the recording is not also left behind in the temporary folder.

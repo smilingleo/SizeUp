@@ -54,7 +54,7 @@ enum LaunchAtLogin {
         case .enabled, .disabled:
             return nil
         case .requiresApproval:
-            return "Approve Sizeup2 in System Settings → General → Login Items."
+            return "Approve ClipShot in System Settings → General → Login Items."
         case .unsupported:
             // Deliberately does NOT say "move it to /Applications": that was
             // measured to be the wrong advice, since the real cause is the

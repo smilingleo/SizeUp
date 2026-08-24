@@ -47,6 +47,30 @@ FORBIDDEN_IMPORTS = {
     "Hotkeys": {"Core", "Config", "SpaceKit", "WindowKit", "Geometry"},
     "SpaceKit": {"Core", "Config", "Hotkeys", "WindowKit", "AppKit"},
     "WindowKit": {"Core", "Config", "Hotkeys"},
+    # The capture side of the merge. These are AppKit-free leaf targets (or the
+    # one AppKit layer over them), so the rule for each is "no AppKit/Carbon and
+    # no other project module" — the same shape that keeps Geometry and WindowKit
+    # honest. Foundation/CoreGraphics/CoreText/ScreenCaptureKit are deliberately
+    # NOT forbidden: they are how a target does real work without a window. The
+    # `Stitching`/`Recording` rows land with those targets (C3/C5); the script
+    # errors on a named directory that is absent, so a row cannot precede its
+    # target.
+    "Capture": {"AppKit", "Carbon", "ApplicationServices", "Geometry", "Config",
+                "Core", "Hotkeys", "SpaceKit", "WindowKit", "Annotation",
+                "OverlayUI", "VideoEdit"},
+    "Annotation": {"AppKit", "Carbon", "ApplicationServices", "Geometry", "Config",
+                   "Core", "Hotkeys", "SpaceKit", "WindowKit", "Capture",
+                   "OverlayUI", "VideoEdit"},
+    # The recording editor. Allowed both `Annotation` and `Capture` -- it is the
+    # first target that needs the renderer and the codec at once, and keeping
+    # video export here is what stops `App` from growing it. Still AppKit-free,
+    # so the timeline and frame math stay testable without a screen.
+    "VideoEdit": {"AppKit", "Carbon", "ApplicationServices", "Geometry", "Config",
+                  "Core", "Hotkeys", "SpaceKit", "WindowKit", "OverlayUI"},
+    # The one AppKit layer. It may import AppKit and the two targets it sits on;
+    # nothing else (no Carbon, no the window-manager modules).
+    "OverlayUI": {"Carbon", "ApplicationServices", "Geometry", "Config", "Core",
+                  "Hotkeys", "SpaceKit", "WindowKit"},
 }
 
 # Private-API entry points. Confined to SpaceKit so that a macOS change has one

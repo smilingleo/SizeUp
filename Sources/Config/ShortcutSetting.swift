@@ -69,6 +69,12 @@ public enum ActionIdentifier {
         case "space.previous": return .space(.previous)
         case "space.above": return .space(.above)
         case "space.below": return .space(.below)
+        // The capture side of the merge (ClipShot). Dotted identifiers, same
+        // convention as the display/space actions, so a hand-edited settings
+        // file reads the same way.
+        case "capture.screenshot": return .captureScreenshot
+        case "capture.record": return .startRecording
+        case "capture.scrollCapture": return .toggleScrollCapture
         default: return nil
         }
     }
@@ -96,6 +102,9 @@ public enum ActionIdentifier {
         case .space(.previous): return "space.previous"
         case .space(.above): return "space.above"
         case .space(.below): return "space.below"
+        case .captureScreenshot: return "capture.screenshot"
+        case .startRecording: return "capture.record"
+        case .toggleScrollCapture: return "capture.scrollCapture"
         }
     }
 

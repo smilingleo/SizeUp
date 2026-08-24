@@ -16,12 +16,12 @@ extension NSRunningApplication: RunningApplicationLike {}
 /// whichever application happens to be frontmost at the instant an action
 /// is performed.
 ///
-/// Sizeup2's own status-item menu is the reason this exists: clicking a menu
-/// entry activates Sizeup2 itself, so `NSWorkspace.shared.frontmostApplication`
-/// at the moment `perform` runs is Sizeup2 — not the app the user actually
+/// ClipShot's own status-item menu is the reason this exists: clicking a menu
+/// entry activates ClipShot itself, so `NSWorkspace.shared.frontmostApplication`
+/// at the moment `perform` runs is ClipShot — not the app the user actually
 /// wants to move a window in. This tracker instead remembers the most
-/// recently activated application that was NOT Sizeup2, so both the hotkey
-/// path (where Sizeup2 never becomes frontmost) and the menu path (where it
+/// recently activated application that was NOT ClipShot, so both the hotkey
+/// path (where ClipShot never becomes frontmost) and the menu path (where it
 /// briefly does) target the right window.
 @MainActor
 public final class ActiveApplicationTracker {
@@ -36,7 +36,7 @@ public final class ActiveApplicationTracker {
     ) {
         self.ownBundleIdentifier = ownBundleIdentifier
         self.ownProcessIdentifier = ownProcessIdentifier
-        // Sizeup2 is `LSUIElement`, so launching it does not re-activate
+        // ClipShot is `LSUIElement`, so launching it does not re-activate
         // whatever app was already frontmost -- no
         // `didActivateApplicationNotification` is ever posted for it. Without
         // this seed, `current` stays nil from launch until the user manually
@@ -50,7 +50,7 @@ public final class ActiveApplicationTracker {
     }
 
     /// Called whenever any application activates. Ignores activations of
-    /// Sizeup2 itself, so `current` always holds the last *other*
+    /// ClipShot itself, so `current` always holds the last *other*
     /// application to become frontmost.
     public func noteActivation(of app: RunningApplicationLike) {
         guard !isSelf(app) else { return }
@@ -74,8 +74,8 @@ public struct AXWindowProvider: WindowProviding {
 
     /// - Parameter targetApplication: Resolves which application to read the
     ///   focused window from. Defaults to whatever is frontmost right now,
-    ///   which is correct for the hotkey path where Sizeup2 stays in the
-    ///   background. Callers that can also be invoked while Sizeup2 itself
+    ///   which is correct for the hotkey path where ClipShot stays in the
+    ///   background. Callers that can also be invoked while ClipShot itself
     ///   is frontmost — the status-item menu — must supply something like
     ///   `ActiveApplicationTracker.current` instead.
     public init(

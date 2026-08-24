@@ -3,24 +3,33 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>Sizeup2</string>
+    <string>ClipShot</string>
     <key>CFBundleDisplayName</key>
-    <string>Sizeup2</string>
+    <string>ClipShot</string>
+    <!-- The identifier is com.lliu.sizeup2 on purpose and must never change:
+         the Accessibility grant is bound to it. The display name is ClipShot;
+         the identifier is an implementation detail. Do not "clean" it up. -->
     <key>CFBundleIdentifier</key>
     <string>com.lliu.sizeup2</string>
     <key>CFBundleExecutable</key>
-    <string>Sizeup2</string>
+    <string>ClipShot</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>1.0.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.productivity</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright © 2026 Leo Liu. MIT licensed.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>ClipShot needs Screen Recording permission to capture screenshots, record selected areas, and create stitched scroll captures that stay on this Mac.</string>
 </dict>
 </plist>

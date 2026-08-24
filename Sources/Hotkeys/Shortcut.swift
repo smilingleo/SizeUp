@@ -12,6 +12,12 @@ public enum KeyCode {
     public static let c: UInt32 = 8
     /// SizeUp's Snap Back default.
     public static let slash: UInt32 = 44
+    // The capture side of the merge. These are the standalone ClipShot defaults
+    // (probe-measured, not recalled): A=0, Z=6, S=1 under ⌃⌘. `KeyCode` holds
+    // them so `DefaultKeymap` can name them rather than spell the raw vkeys.
+    public static let a: UInt32 = 0
+    public static let z: UInt32 = 6
+    public static let s: UInt32 = 1
 }
 
 /// A global keyboard shortcut.

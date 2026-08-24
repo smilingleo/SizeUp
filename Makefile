@@ -1,4 +1,4 @@
-.PHONY: test lint build dev run clean
+.PHONY: test lint build dev run clean signing-cert
 
 test: lint
 	swift test
@@ -8,19 +8,24 @@ lint:
 	./Scripts/lint-tests.py
 	./Scripts/lint-layering.py
 
+# One-time: a stable signing identity, so the Accessibility and Screen
+# Recording grants survive a rebuild instead of being asked for every time.
+signing-cert:
+	./Scripts/make-signing-cert.sh
+
 build:
 	./Scripts/build-app.sh
 
 # Build, install to /Applications, and restart the app.
 dev: build
-	- pkill -x Sizeup2 || true
-	rm -rf /Applications/Sizeup2.app
-	cp -R build/Sizeup2.app /Applications/
-	open /Applications/Sizeup2.app
+	- pkill -x ClipShot || true
+	rm -rf /Applications/ClipShot.app
+	cp -R build/ClipShot.app /Applications/
+	open /Applications/ClipShot.app
 
 run: build
-	- pkill -x Sizeup2 || true
-	open build/Sizeup2.app
+	- pkill -x ClipShot || true
+	open build/ClipShot.app
 
 clean:
 	swift package clean

@@ -14,4 +14,17 @@ import Testing
     #expect(!Action.snapBack.isPlacement)
     #expect(!Action.display(.next).isPlacement)
     #expect(!Action.space(.above).isPlacement)
+    // The capture actions (ClipShot) have no window frame at all; they are
+    // routing identifiers dispatched to the capture session, not placements.
+    #expect(!Action.captureScreenshot.isPlacement)
+    #expect(!Action.startRecording.isPlacement)
+    #expect(!Action.toggleScrollCapture.isPlacement)
+}
+
+@Test func captureActionsDoNotCycle() {
+    // Only halves cycle. A repeated capture press must behave like the Rust
+    // ClipShot did: start (or stop) — never advance through a size cycle.
+    #expect(!Action.captureScreenshot.cycles)
+    #expect(!Action.startRecording.cycles)
+    #expect(!Action.toggleScrollCapture.cycles)
 }

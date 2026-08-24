@@ -241,7 +241,7 @@ struct RunningApplicationEntry: Identifiable, Equatable {
     let id: String
     let name: String
 
-    /// Excludes Sizeup2 itself and anything already in `excluding`.
+    /// Excludes ClipShot itself and anything already in `excluding`.
     static func current(excluding: [String]) -> [RunningApplicationEntry] {
         let ownBundleIdentifier = Bundle.main.bundleIdentifier
         return NSWorkspace.shared.runningApplications
@@ -365,7 +365,7 @@ struct PreferencesView: View {
     private var skipListSection: some View {
         Section("Skip list") {
             if viewModel.skippedBundleIdentifiers.isEmpty {
-                Text("No applications are skipped. Sizeup2 will move windows in every app.")
+                Text("No applications are skipped. ClipShot will move windows in every app.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
