@@ -76,6 +76,37 @@ tccutil reset ScreenCapture com.lliu.sizeup2
 Then grant both once when asked. That order matters — reset *after* installing
 the signed build, or you will re-grant the old one.
 
+### If the permission entry shows the wrong app name
+
+macOS resolves a bundle identifier to *one* app, preferring `/Applications`
+over a build directory. If a superseded copy sharing the identifier is still
+installed — `Sizeup2.app`, say — that copy wins, and the entry under Privacy &
+Security carries *its* name even though `ClipShot.app` is what you launched.
+The bundle is labelled correctly; the identifier is just ambiguous. Worse, the
+two apps then share one permission grant and one settings file.
+
+`make build` warns when it detects this. To fix it, remove the stale copy, drop
+its LaunchServices record, and reset the grant:
+
+```sh
+LSREG=/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Support/lsregister
+$LSREG -u /Applications/Sizeup2.app     # unregister before removing
+rm -rf /Applications/Sizeup2.app
+tccutil reset Accessibility com.lliu.sizeup2
+```
+
+Records can also linger for apps on volumes that are no longer mounted. List
+everything claiming the identifier with:
+
+```sh
+$LSREG -dump | perl -ne 'if(/^\s*path:\s+(.*?)(?:\s+\(0x[0-9a-f]+\))?$/){$p=$1}
+  if(/CFBundleIdentifier = "com\.lliu\.sizeup2"/){print "$p\n"}' | sort -u
+```
+
+and unregister each dead one with `$LSREG -u "<path>"`. Note that
+`lsregister -kill` no longer exists on current macOS, so pruning has to be done
+per path.
+
 ## Window management
 
 `ClipShot` uses the Accessibility API and a handful of global keyboard

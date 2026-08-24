@@ -43,6 +43,24 @@ else
     echo "         Run 'make signing-cert' once to stop that."
     codesign --force --sign - --identifier "${BUNDLE_ID}" "${APP}"
 fi
+# Warn if another bundle also claims this identifier.
+#
+# macOS resolves an identifier to *one* app, preferring /Applications over a
+# build directory. When a superseded copy is still installed it wins, and the
+# permission entry in System Settings then carries the *other* app's name --
+# which looks like the build is registering itself wrongly, when really the
+# identifier is ambiguous. It also means the two apps share one grant and one
+# settings file. Cheap to detect, confusing to diagnose.
+OTHERS="$(mdfind "kMDItemCFBundleIdentifier == '${BUNDLE_ID}'" 2>/dev/null \
+    | grep -vFx "${APP}" || true)"
+if [ -n "${OTHERS}" ]; then
+    echo "warning: another app also claims ${BUNDLE_ID}:"
+    echo "${OTHERS}" | sed 's/^/         /'
+    echo "         macOS will show that app's name in Privacy & Security, and the"
+    echo "         two will share one permission grant. Remove the stale copy, then:"
+    echo "         tccutil reset Accessibility ${BUNDLE_ID}"
+fi
+
 codesign -dv "${APP}" 2>&1 | grep -E 'Identifier|Signature'
 codesign -d -r- "${APP}" 2>&1 | grep designated || true
 
