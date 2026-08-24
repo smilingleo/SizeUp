@@ -140,6 +140,20 @@ final class MenuBuilder {
         help.isEnabled = true
         menu.addItem(help)
 
+        // Hold Option and Help becomes the window probe. An alternate item is
+        // the right home for it: it is a diagnostic that exists for one open bug
+        // report, it moves the user's focused window around to find out what the
+        // window will accept, and nobody should reach it by accident. It sits on
+        // Help because that is where someone already is when things are wrong.
+        let probe = NSMenuItem(title: "Diagnose Focused Window (writes to the log)",
+                               action: #selector(AppDelegate.diagnoseFocusedWindow),
+                               keyEquivalent: "")
+        probe.keyEquivalentModifierMask = .option
+        probe.isAlternate = true
+        probe.target = target
+        probe.isEnabled = true
+        menu.addItem(probe)
+
         let quit = NSMenuItem(title: "Quit ClipShot",
                               action: #selector(AppDelegate.quit),
                               keyEquivalent: "q")

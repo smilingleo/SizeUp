@@ -340,6 +340,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// The Option-Help row. Asks the focused window a series of narrowing
+    /// questions about what it will accept and writes the answers to the log.
+    ///
+    /// Built fresh rather than borrowed from the router: the router's window
+    /// provider is the right one, but the probe needs the screen the window is
+    /// actually on, and choosing that is the router's private business. Picking
+    /// it here by overlap keeps the probe from depending on it.
+    @objc func diagnoseFocusedWindow() {
+        let screens = SystemScreenProvider()
+        let provider = AXWindowProvider(screens: screens) { [activeApplicationTracker] in
+            activeApplicationTracker.current
+        }
+        guard let window = provider.focusedWindow() else {
+            Log.problem("probe: no focused window")
+            return
+        }
+        guard let frame = window.frame() else {
+            Log.problem("probe: the focused window's frame is unreadable")
+            return
+        }
+        let best = screens.screens.max { a, b in
+            Self.overlap(frame, a.frame) < Self.overlap(frame, b.frame)
+        }
+        guard let best else {
+            Log.problem("probe: no screens")
+            return
+        }
+        WindowProbe.run(on: window, screen: best)
+    }
+
+    private static func overlap(_ a: CGRect, _ b: CGRect) -> CGFloat {
+        let i = a.intersection(b)
+        return i.isNull ? 0 : i.width * i.height
+    }
+
     @objc func openAccessibilitySettings() {
         let url = URL(
             string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
