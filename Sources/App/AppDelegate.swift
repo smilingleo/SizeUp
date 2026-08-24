@@ -1,6 +1,7 @@
 import AppKit
 import Config
 import Core
+import Diagnostics
 import Geometry
 import Hotkeys
 import WindowKit
@@ -37,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settings.migrateFromLegacy()
         settings.load()
         rebuildRouter()
+        logScreens()
         // Before the status item is built, and independently of whether
         // Accessibility has been granted. `resolveKeymap` used to run only
         // inside `registerHotkeys`, which is gated on that permission, so on any
@@ -119,6 +121,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             spans: current.resolvedCycle,
             skipList: Set(current.skippedBundleIdentifiers)
         )
+    }
+
+    /// The displays as this app sees them, once at launch.
+    ///
+    /// Every tiled frame is derived from a `visibleFrame`, so when a window
+    /// lands somewhere absurd the first question is whether the geometry we
+    /// started from was right. Logging it costs one line per display at launch
+    /// and turns "the window went to the wrong place" from a guess into a
+    /// subtraction.
+    private func logScreens() {
+        for screen in NSScreen.screens {
+            let frame = screen.frame
+            let visible = screen.visibleFrame
+            Log.note("display \(Int(frame.width))x\(Int(frame.height))"
+                + " at (\(Int(frame.minX)),\(Int(frame.minY)))"
+                + " usable \(Int(visible.width))x\(Int(visible.height))"
+                + " at (\(Int(visible.minX)),\(Int(visible.minY)))"
+                + (screen == NSScreen.main ? " [main]" : ""))
+        }
     }
 
     @objc private func applicationDidActivate(_ notification: Notification) {
