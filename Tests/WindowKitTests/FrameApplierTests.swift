@@ -57,11 +57,20 @@ private final class Cooperative {
 /// So this models what was observed and nothing more: a size whose height
 /// exceeds a fixed limit is ignored outright — both dimensions, not clamped —
 /// while position writes are honoured.
-private final class RefusesToGrow {
-    static let heightLimit: CGFloat = 1290
+private final class RefusesToResize {
+    /// Frozen, not capped. The probe asked for 968 with the width untouched and
+    /// that was refused too, which rules out a maximum.
+    static let frozenHeight: CGFloat = 1290
 
     var frame: CGRect
     var pauses = 0
+    /// Set by a refused resize and consumed by the next pause, because the
+    /// recovery is asynchronous. Modelling it on the write instead would be
+    /// useless: the last thing every attempt does is write the position, so the
+    /// drift would always be overwritten before anyone could read it, and any
+    /// implementation at all would look correct.
+    private var recovering = false
+    private var recoveries: CGFloat = 0
 
     init(_ frame: CGRect) { self.frame = frame }
 
@@ -70,17 +79,28 @@ private final class RefusesToGrow {
             read: { self.frame },
             writePosition: { self.frame.origin = $0 },
             writeSize: { size in
-                guard size.height <= Self.heightLimit else { return }
+                guard size.height == self.frame.height else {
+                    self.recovering = true
+                    return
+                }
                 self.frame.size = size
             },
-            pause: { self.pauses += 1 }
+            pause: {
+                self.pauses += 1
+                guard self.recovering else { return }
+                // Lands somewhere new each time, which is what five identical
+                // requests producing five different positions looks like.
+                self.recovering = false
+                self.recoveries += 1
+                self.frame.origin.y += self.recoveries * 37
+            }
         )
     }
 }
 
 @Test func aWindowThatRefusesAHeightIsNotTalkedIntoItByRetrying() {
     // Exactly the failing line, in Accessibility space.
-    let window = RefusesToGrow(CGRect(x: -3360, y: -825, width: 2056, height: 1290))
+    let window = RefusesToResize(CGRect(x: -3360, y: -825, width: 2056, height: 1290))
     let target = CGRect(x: -3360, y: -1395, width: 1120, height: 1860)
 
     let result = window.applier().apply(target)
@@ -89,10 +109,10 @@ private final class RefusesToGrow {
     // What it buys is that the caller and the log know: three attempts, and the
     // frame reported back is the real one, not the one that was asked for.
     #expect(result.attemptsUsed == 3)
-    #expect(result.frame == CGRect(x: -3360, y: -1395, width: 2056, height: 1290))
-    // One per attempt: each attempt that misses looks again after a pause,
-    // because an application still relayouting reads back mid-move.
-    #expect(window.pauses == 3)
+    #expect(result.frame?.size == CGSize(width: 2056, height: 1290))
+    // Three attempts, each looking again after a pause because an application
+    // still relayouting reads back mid-move, plus the settling write at the end.
+    #expect(window.pauses == 4)
 }
 
 @Test func aRefusedSizeStillLeavesTheWindowWhereItWasAskedToGo() {
@@ -101,14 +121,14 @@ private final class RefusesToGrow {
     // and the trailing position write lands after the size was rejected. This
     // is why the reported Cocoa y was 1434 rather than 864 — arithmetic, not a
     // second bug.
-    let window = RefusesToGrow(CGRect(x: 0, y: 0, width: 2056, height: 1290))
+    let window = RefusesToResize(CGRect(x: 0, y: 0, width: 2056, height: 1290))
     let target = CGRect(x: -3360, y: -1395, width: 1120, height: 1860)
 
     let result = window.applier().apply(target)
 
     #expect(result.frame?.origin == target.origin)
     let primaryHeight: CGFloat = 1329
-    let cocoaY = primaryHeight - (target.minY + RefusesToGrow.heightLimit)
+    let cocoaY = primaryHeight - (target.minY + RefusesToResize.frozenHeight)
     #expect(cocoaY == 1434)
 }
 
@@ -134,9 +154,9 @@ private final class RefusesToGrow {
 
     #expect(result.attemptsUsed == 3)
     #expect(sizeWrites == 3)
-    // Three attempts, three second looks. The bound is what matters: this is a
-    // window that will never comply, and it still costs 30ms and then stops.
-    #expect(pauses == 3)
+    // Three attempts, three second looks, one settling write. The bound is what
+    // matters: a window that will never comply costs 40ms and then stops.
+    #expect(pauses == 4)
     #expect(result.frame?.size == minimum)
 }
 
@@ -216,4 +236,44 @@ private final class RefusesToGrow {
     #expect(result.attemptsUsed == 1)
     #expect(pauses == 1)
     #expect(reads == 2)
+}
+
+@Test func aWindowThatCannotBeResizedIsAtLeastPlacedWhereItWasSent() {
+    // Slack's height is frozen: it will not grow and it will not shrink. Asked
+    // five times for an impossible height at a fixed origin, it ended up at five
+    // different positions, because each rejected resize left it recovering
+    // wherever. The fix is to stop insisting once the answer is known.
+    let window = RefusesToResize(CGRect(x: -3360, y: -825, width: 1028, height: 1290))
+    let target = CGRect(x: -3360, y: -1395, width: 1680, height: 1860)
+
+    let result = window.applier().apply(target)
+
+    // The size is still wrong and that is not fixable here. The position is not.
+    #expect(result.frame?.origin == target.origin)
+    #expect(result.frame?.size == CGSize(width: 1028, height: 1290))
+}
+
+@Test func thePlacementIsTheSameEveryTimeItIsAsked() {
+    // The actual complaint was not that the window was the wrong size, it was
+    // that the same shortcut did something different each time. One window, the
+    // same request three times over, must come to rest in one place.
+    let window = RefusesToResize(CGRect(x: -3360, y: -825, width: 1028, height: 1290))
+    let target = CGRect(x: -1680, y: -1395, width: 1680, height: 1860)
+
+    let landings = (0..<3).map { _ in window.applier().apply(target).frame }
+
+    #expect(Set(landings.map { $0?.origin.y }).count == 1)
+    #expect(landings.allSatisfy { $0?.origin == target.origin })
+}
+
+@Test func aWindowThatTookTheSizeIsNotGivenAnExtraWrite() {
+    // The settling write is for refusals only. A compliant window must not pay
+    // an extra round trip, nor a pause, for a problem it does not have.
+    let window = Cooperative(CGRect(x: 0, y: 0, width: 100, height: 100))
+
+    let result = window.applier().apply(CGRect(x: 10, y: 20, width: 300, height: 400))
+
+    #expect(result.attemptsUsed == 1)
+    #expect(window.positionWrites == 2)
+    #expect(window.pauses == 0)
 }

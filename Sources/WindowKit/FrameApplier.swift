@@ -92,7 +92,36 @@ struct FrameApplier {
                 return (settled, attempt)
             }
         }
-        return (achieved, attempts)
+
+        return (settle(at: target, having: achieved), attempts)
+    }
+
+    /// Places a window that would not take the size it was asked for.
+    ///
+    /// Once the size is known to be refused, insisting on it is what does the
+    /// damage. Slack, asked five times to be 1860 tall at one fixed origin,
+    /// came to rest at five different positions — each rejected resize left it
+    /// recovering wherever. The very next request, for the size it already had,
+    /// was honoured to the point.
+    ///
+    /// So this stops asking. One position write with the size left out of it,
+    /// which puts the window at the target's origin — the top-left of the region
+    /// it was sent to, since Accessibility positions the top edge. A window that
+    /// cannot fill its half of the display at least lands neatly in it, in the
+    /// same place every time, instead of somewhere new on every keypress.
+    ///
+    /// Predictability is the whole benefit, and it is worth being plain that it
+    /// is the only one: the window is still the wrong size and nothing here can
+    /// change that.
+    private func settle(at target: CGRect, having achieved: CGRect?) -> CGRect? {
+        guard let achieved,
+              abs(achieved.width - target.width) > tolerance
+                  || abs(achieved.height - target.height) > tolerance
+        else { return achieved }
+
+        writePosition(target.origin)
+        pause()
+        return read() ?? achieved
     }
 
     /// How far the worst corner or dimension is out. One number, because the
