@@ -17,7 +17,6 @@ public enum Action: Sendable, Equatable {
     case fullScreen
     case snapBack
     case display(Direction)
-    case space(Direction)
     // The capture side of the merge (ClipShot). These are routing identifiers
     // only: they are never frame math, so `isPlacement` is false for them, and
     // they do not participate in the size cycle. `ActionRouter.perform` and
@@ -50,7 +49,7 @@ public enum Action: Sendable, Equatable {
         // Snap back, the moves, and the capture actions all leave the frame
         // untouched by `targetFrame`; App dispatches capture actions to the
         // capture session before the router is ever asked.
-        case .snapBack, .display, .space, .captureScreenshot,
+        case .snapBack, .display, .captureScreenshot,
              .startRecording: return false
         }
     }
@@ -61,7 +60,7 @@ public enum Action: Sendable, Equatable {
     public var isCapture: Bool {
         switch self {
         case .captureScreenshot, .startRecording: return true
-        case .half, .quarter, .center, .fullScreen, .snapBack, .display, .space:
+        case .half, .quarter, .center, .fullScreen, .snapBack, .display:
             return false
         }
     }

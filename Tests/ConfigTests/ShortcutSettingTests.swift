@@ -14,7 +14,6 @@ import Foundation
         .quarter(.upperLeft), .quarter(.upperRight), .quarter(.lowerLeft), .quarter(.lowerRight),
         .center, .fullScreen, .snapBack,
         .display(.next), .display(.previous), .display(.above), .display(.below),
-        .space(.next), .space(.previous), .space(.above), .space(.below),
         // The capture side of the merge: same round-trip discipline.
         .captureScreenshot, .startRecording,
     ]

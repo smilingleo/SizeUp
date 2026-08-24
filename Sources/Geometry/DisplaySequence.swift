@@ -4,9 +4,10 @@ import CoreGraphics
 ///
 /// Returns `nil` when there is nowhere to go: fewer than two displays, a
 /// `current` that is not among `screens`, or a direction that does not apply
-/// to displays. `.above`/`.below` are reserved for Spaces (M4) and must never
-/// be silently reinterpreted as `.next`/`.previous` — a window landing on the
-/// wrong display is worse than a shortcut doing nothing.
+/// to displays. `.above`/`.below` exist because SizeUp had them but ship
+/// unbound, and must never be silently reinterpreted as `.next`/`.previous` —
+/// a window landing on the wrong display is worse than a shortcut doing
+/// nothing.
 public func neighbouringScreen(
     from current: ScreenInfo,
     in screens: [ScreenInfo],

@@ -42,11 +42,6 @@ public enum DefaultKeymap {
         // dropped command bit here would silently steal the halves shortcuts.
         (Shortcut(keyCode: KeyCode.rightArrow, modifierFlags: ctrlOpt), .display(.next)),
         (Shortcut(keyCode: KeyCode.leftArrow, modifierFlags: ctrlOpt), .display(.previous)),
-        // Next/Previous Space. Same arrows again, distinguished from both the
-        // halves and the display moves by the modifier combination — control
-        // and command, no option.
-        (Shortcut(keyCode: KeyCode.rightArrow, modifierFlags: ctrlCmd), .space(.next)),
-        (Shortcut(keyCode: KeyCode.leftArrow, modifierFlags: ctrlCmd), .space(.previous)),
     ]
 
     /// Menu label for an action.
@@ -72,10 +67,6 @@ public enum DefaultKeymap {
         case .display(.previous): return "Previous Display"
         case .display(.above): return "Display Above"
         case .display(.below): return "Display Below"
-        case .space(.next): return "Next Space"
-        case .space(.previous): return "Previous Space"
-        case .space(.above): return "Space Above"
-        case .space(.below): return "Space Below"
         case .captureScreenshot: return "Screenshot"
         case .startRecording: return "Record Screen"
         }

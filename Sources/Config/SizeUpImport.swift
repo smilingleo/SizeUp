@@ -49,17 +49,21 @@ public enum SizeUpImporter {
         "SnapBack": "snapBack",
         "Next Monitor": "display.next",
         "Prev Monitor": "display.previous",
-        "Space Next": "space.next",
-        "Space Prev": "space.previous",
     ]
 
-    /// SizeUp keys deliberately never turned into a binding: macOS has had a
-    /// single horizontal strip of Spaces per display since Lion, so there is
-    /// no vertical neighbour for either to reach. Mapping them to next/previous
-    /// would be behaviour invented rather than reproduced — see
-    /// `SpaceSequence`'s doc comment — so they are reported as skipped instead
-    /// of silently dropped, and the import alert can name them.
-    private static let alwaysSkipped: Set<String> = ["Space Above", "Space Below"]
+    /// SizeUp keys deliberately never turned into a binding: this app has no
+    /// Spaces feature to bind them to. macOS stopped honouring the private
+    /// SkyLight call that moves a window between Spaces — it returns without
+    /// moving anything, even for the caller's own window — so the feature was
+    /// removed rather than left as four shortcuts that do nothing.
+    ///
+    /// Reported as skipped rather than silently dropped: a SizeUp user who had
+    /// these bound is entitled to be told they did not come across, and the
+    /// import alert names them. Keys the plist never mentions stay unreported,
+    /// so this only speaks up for someone who actually used them.
+    private static let alwaysSkipped: Set<String> = [
+        "Space Next", "Space Prev", "Space Above", "Space Below",
+    ]
 
     /// SizeUp stores its preferences the ordinary `NSUserDefaults` way: a
     /// plist named after its bundle identifier under `~/Library/Preferences`.

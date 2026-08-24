@@ -1,3 +1,9 @@
+> **Superseded.** The Spaces feature this checklist verifies was removed: macOS
+> no longer honours `SLSMoveWindowsToManagedSpace`, which returns without moving
+> anything even for the calling process's own window. Kept as the record of what
+> M5 shipped and how it was checked; do not work through it. See the README
+> section "No 'move window to Space'".
+
 # M5 manual verification — Spaces
 
 The parts that could be verified without Accessibility permission were verified: the private API resolves,

@@ -71,7 +71,6 @@ private let builtIn = ScreenInfo(
 @Test func nonGeometricActionsReturnNil() {
     #expect(targetFrame(for: .snapBack, on: builtIn) == nil)
     #expect(targetFrame(for: .display(.next), on: builtIn) == nil)
-    #expect(targetFrame(for: .space(.next), on: builtIn) == nil)
 }
 
 @Test func onlyHalvesCycle() {

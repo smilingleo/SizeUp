@@ -15,17 +15,14 @@ import CoreGraphics
     #expect(settings.skippedBundleIdentifiers == [])
 }
 
-/// SizeUp follows a moved window to its destination Space, and the author
-/// has 13,318 window moves of muscle memory riding on that behaviour, so
-/// this must default to on rather than off.
-@Test func followsWindowToSpaceDefaultsToTrue() {
-    #expect(Settings().followsWindowToSpace)
-}
-
-@Test func decodingToleratesAMissingFollowsWindowToSpaceField() throws {
-    let data = Data("{}".utf8)
+/// The Spaces feature is gone, but settings.json files written by builds that
+/// had it carry a `followsWindowToSpace` key. Decoding must ignore it rather
+/// than fail: a file the user cannot load is a file whose gaps, cycle and
+/// shortcuts are all silently lost.
+@Test func decodingIgnoresTheRetiredFollowsWindowToSpaceField() throws {
+    let data = Data(#"{"followsWindowToSpace": false}"#.utf8)
     let decoded = try JSONDecoder().decode(Settings.self, from: data)
-    #expect(decoded.followsWindowToSpace)
+    #expect(decoded == Settings())
 }
 
 @Test func aSpanCoveringEveryColumnIsRejected() {

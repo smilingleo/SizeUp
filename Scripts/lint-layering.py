@@ -3,9 +3,7 @@
 
 Every milestone's task brief has restated these rules and every review has
 checked them by hand. That worked, but it is exactly the kind of invariant that
-holds until the one time nobody looks -- and M5 weakened the graph by giving
-`WindowKit` a dependency on `SpaceKit`, which is a deliberate exception that
-makes the rest of the rules easier to erode by accident.
+holds until the one time nobody looks.
 
 The rules and, more usefully, WHY each exists:
 
@@ -18,13 +16,14 @@ The rules and, more usefully, WHY each exists:
                 `precondition` and would trap on a hand-edited file. That is why
                 the DTOs are separate types, and why `Config` must not reach
                 `Core` and start making routing decisions with them.
-  Core       -- no Foundation, no Config, no SpaceKit. The routing logic. Keeping
-                Foundation out is what keeps it honest about being pure decision
-                logic over injected seams; concrete collaborators are assembled
-                in App.
-  SpaceKit   -- the ONLY target allowed to touch private API. The point is blast
-                radius: a macOS release that changes a SkyLight symbol must have
-                one directory to break, not several.
+  Core       -- no Foundation, no Config. The routing logic. Keeping Foundation
+                out is what keeps it honest about being pure decision logic over
+                injected seams; concrete collaborators are assembled in App.
+  No target   -- may touch private API. The Spaces feature was the only caller,
+                and it was removed once macOS stopped honouring the SkyLight
+                window-move: there is no longer a reason for any private symbol
+                to be in the tree, so the allow-list is empty rather than
+                pointed at a directory somebody could refill.
 
 `App` is unconstrained: it is the executable, its job is to join things
 together, and it is untestable by construction anyway.
@@ -36,16 +35,15 @@ import sys
 
 FORBIDDEN_IMPORTS = {
     "Geometry": {"AppKit", "Foundation", "Carbon", "ApplicationServices", "Core",
-                 "Config", "WindowKit", "Hotkeys", "SpaceKit"},
-    "Config": {"AppKit", "Carbon", "Core", "Hotkeys", "SpaceKit", "WindowKit"},
-    "Core": {"Foundation", "Config", "SpaceKit", "AppKit"},
+                 "Config", "WindowKit", "Hotkeys"},
+    "Config": {"AppKit", "Carbon", "Core", "Hotkeys", "WindowKit"},
+    "Core": {"Foundation", "Config", "AppKit"},
     # Geometry included because `Hotkeys` declares NO dependencies in
     # Package.swift. The first version of this table omitted it, so the lint
     # permitted an import the build would have rejected -- encoding a rule from
     # prose instead of from Package.swift, which is exactly the mistake that makes
     # a lint worth less than the file it claims to guard.
-    "Hotkeys": {"Core", "Config", "SpaceKit", "WindowKit", "Geometry"},
-    "SpaceKit": {"Core", "Config", "Hotkeys", "WindowKit", "AppKit"},
+    "Hotkeys": {"Core", "Config", "WindowKit", "Geometry"},
     "WindowKit": {"Core", "Config", "Hotkeys"},
     # The capture side of the merge. These are AppKit-free leaf targets (or the
     # one AppKit layer over them), so the rule for each is "no AppKit/Carbon and
@@ -56,25 +54,26 @@ FORBIDDEN_IMPORTS = {
     # errors on a named directory that is absent, so a row cannot precede its
     # target.
     "Capture": {"AppKit", "Carbon", "ApplicationServices", "Geometry", "Config",
-                "Core", "Hotkeys", "SpaceKit", "WindowKit", "Annotation",
+                "Core", "Hotkeys", "WindowKit", "Annotation",
                 "OverlayUI", "VideoEdit"},
     "Annotation": {"AppKit", "Carbon", "ApplicationServices", "Geometry", "Config",
-                   "Core", "Hotkeys", "SpaceKit", "WindowKit", "Capture",
+                   "Core", "Hotkeys", "WindowKit", "Capture",
                    "OverlayUI", "VideoEdit"},
     # The recording editor. Allowed both `Annotation` and `Capture` -- it is the
     # first target that needs the renderer and the codec at once, and keeping
     # video export here is what stops `App` from growing it. Still AppKit-free,
     # so the timeline and frame math stay testable without a screen.
     "VideoEdit": {"AppKit", "Carbon", "ApplicationServices", "Geometry", "Config",
-                  "Core", "Hotkeys", "SpaceKit", "WindowKit", "OverlayUI"},
+                  "Core", "Hotkeys", "WindowKit", "OverlayUI"},
     # The one AppKit layer. It may import AppKit and the two targets it sits on;
     # nothing else (no Carbon, no the window-manager modules).
     "OverlayUI": {"Carbon", "ApplicationServices", "Geometry", "Config", "Core",
-                  "Hotkeys", "SpaceKit", "WindowKit"},
+                  "Hotkeys", "WindowKit"},
 }
 
-# Private-API entry points. Confined to SpaceKit so that a macOS change has one
-# place to break rather than several.
+# Private-API entry points, now banned outright: the Spaces feature was the only
+# caller and it is gone, so the cheapest way to keep it that way is an empty
+# allow-list.
 # `dlopen`/`dlsym` (looking a symbol up by name at runtime, which is how you
 # reach something with no header) and underscore-prefixed AX symbols.
 #
@@ -92,7 +91,7 @@ PRIVATE_API = re.compile(
     r"\bdlsym\b|\bdlopen\b|\b_AX[A-Za-z]+"
     r"|@_silgen_name|\bCFBundleGetFunctionPointerForName\b"
 )
-PRIVATE_API_ALLOWED = {"SpaceKit"}
+PRIVATE_API_ALLOWED: set[str] = set()
 
 
 def main() -> int:
@@ -122,8 +121,8 @@ def main() -> int:
             found = PRIVATE_API.search(line)
             if found:
                 problems.append(
-                    f"{path.relative_to(root)}:{number}: {found.group(0)} outside SpaceKit — "
-                    "private API is quarantined there on purpose"
+                    f"{path.relative_to(root)}:{number}: {found.group(0)} is private API — "
+                    "the tree deliberately has none left"
                 )
 
     if problems:

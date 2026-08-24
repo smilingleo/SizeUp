@@ -26,7 +26,6 @@ let external = ScreenInfo(
 final class TestWindow: WindowHandle {
     let key: WindowKey
     var bundleIdentifier: String?
-    var windowID: UInt32?
     var stored: CGRect
     var minSize: CGSize
     private(set) var applied: [CGRect] = []
@@ -34,12 +33,10 @@ final class TestWindow: WindowHandle {
     init(key: WindowKey = WindowKey(pid: 1, elementHash: 1),
          frame: CGRect,
          bundleIdentifier: String? = "com.example.app",
-         windowID: UInt32? = nil,
          minSize: CGSize = .zero) {
         self.key = key
         self.stored = frame
         self.bundleIdentifier = bundleIdentifier
-        self.windowID = windowID
         self.minSize = minSize
     }
 
@@ -77,44 +74,13 @@ struct TestWindows: WindowProviding {
     }
 }
 
-/// A fake `SpaceControlling`, configurable to exercise every early-return in
-/// `ActionRouter`'s `.space` handling: unavailable, no layout, no neighbour,
-/// a failed move. `@unchecked Sendable` because it is test-only mutable
-/// state driven entirely from the `@MainActor` tests that construct it, the
-/// same way `TestWindow`'s class-based mutability is never actually shared
-/// across threads.
-final class FakeSpaceControlling: SpaceControlling, @unchecked Sendable {
-    var isAvailable = true
-    var layoutsByWindow: [UInt32: (spaces: [SpaceIdentifier], current: SpaceIdentifier, display: String)] = [:]
-    var moveSucceeds = true
-    private(set) var moves: [(windowID: UInt32, space: SpaceIdentifier)] = []
-    private(set) var activations: [(space: SpaceIdentifier, display: String)] = []
-
-    func layout(containing windowID: UInt32)
-        -> (spaces: [SpaceIdentifier], current: SpaceIdentifier, display: String)? {
-        layoutsByWindow[windowID]
-    }
-
-    func move(windowID: UInt32, to space: SpaceIdentifier) -> Bool {
-        moves.append((windowID, space))
-        return moveSucceeds
-    }
-
-    func activate(_ space: SpaceIdentifier, onDisplay display: String) -> Bool {
-        activations.append((space, display))
-        return true
-    }
-}
-
 @MainActor
 func makeRouter(
     window: WindowHandle?,
     screens: [ScreenInfo] = [builtIn],
     spans: [Span] = [.half],
     skipList: Set<String> = [],
-    store: WindowStateStore = WindowStateStore(),
-    spaces: SpaceControlling? = nil,
-    followsWindowToSpace: Bool = true
+    store: WindowStateStore = WindowStateStore()
 ) -> ActionRouter {
     ActionRouter(
         screens: TestScreens(screens: screens),
@@ -122,9 +88,7 @@ func makeRouter(
         store: store,
         gaps: .zero,
         spans: spans,
-        skipList: skipList,
-        spaces: spaces,
-        followsWindowToSpace: followsWindowToSpace
+        skipList: skipList
     )
 }
 

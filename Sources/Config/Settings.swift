@@ -109,12 +109,6 @@ public struct Settings: Sendable, Equatable, Codable {
     public var gaps: GapSettings
     public var cycle: [SpanSetting]
     public var skippedBundleIdentifiers: [String]
-    /// SizeUp's behaviour, and the one the author's muscle memory expects:
-    /// moving a window to another Space follows it there. `false` leaves the
-    /// user on their current Space while the window moves — deliberate for
-    /// someone who wants to stage windows across Spaces without being pulled
-    /// along.
-    public var followsWindowToSpace: Bool
     /// Overrides, not a full keymap. An action absent here keeps whatever
     /// `DefaultKeymap` ships; see `ShortcutSetting`'s doc for why persisting
     /// the resolved keymap instead would silently orphan a future version's
@@ -128,14 +122,12 @@ public struct Settings: Sendable, Equatable, Codable {
         cycle: [SpanSetting] = [SpanSetting(occupied: 1, columns: 2)],
         skippedBundleIdentifiers: [String] = [],
         shortcutOverrides: [ShortcutSetting] = [],
-        followsWindowToSpace: Bool = true,
         capture: CaptureSettings = CaptureSettings()
     ) {
         self.gaps = gaps
         self.cycle = cycle
         self.skippedBundleIdentifiers = skippedBundleIdentifiers
         self.shortcutOverrides = shortcutOverrides
-        self.followsWindowToSpace = followsWindowToSpace
         self.capture = capture
     }
 
@@ -155,9 +147,6 @@ public struct Settings: Sendable, Equatable, Codable {
         shortcutOverrides =
             try container.decodeIfPresent([ShortcutSetting].self, forKey: .shortcutOverrides)
                 ?? defaults.shortcutOverrides
-        followsWindowToSpace =
-            try container.decodeIfPresent(Bool.self, forKey: .followsWindowToSpace)
-                ?? defaults.followsWindowToSpace
         // Absent key → both on. A save that never changes `capture` writes the
         // defaults back exactly, so the migrated file stays byte-for-byte as it
         // was.
@@ -166,8 +155,10 @@ public struct Settings: Sendable, Equatable, Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case gaps, cycle, skippedBundleIdentifiers, shortcutOverrides, followsWindowToSpace,
-             capture
+        // `followsWindowToSpace` is deliberately gone rather than kept as an
+        // ignored key: `Codable` here decodes key by key, so a stale key in an
+        // existing settings.json is simply not read, and the next save drops it.
+        case gaps, cycle, skippedBundleIdentifiers, shortcutOverrides, capture
     }
 
     /// The resolved cycle, with invalid steps dropped and order preserved.

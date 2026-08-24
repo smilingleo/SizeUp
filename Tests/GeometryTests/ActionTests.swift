@@ -13,7 +13,7 @@ import Testing
     // a remembered frame, and the moves describe a transition, not a layout.
     #expect(!Action.snapBack.isPlacement)
     #expect(!Action.display(.next).isPlacement)
-    #expect(!Action.space(.above).isPlacement)
+    #expect(!Action.display(.above).isPlacement)
     // The capture actions (ClipShot) have no window frame at all; they are
     // routing identifiers dispatched to the capture session, not placements.
     #expect(!Action.captureScreenshot.isPlacement)

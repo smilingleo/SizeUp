@@ -1,8 +1,7 @@
 # ClipShot
 
 A menu-bar app for macOS that does two jobs: it **manages windows** (the former
-Sizeup2 — halves, quarters, full screen, center, multi-display, Spaces, snap
-back) and it **captures the screen** (region screenshots with an annotation editor, and
+Sizeup2 — halves, quarters, full screen, center, multi-display, snap back) and it **captures the screen** (region screenshots with an annotation editor, and
 screen recording with a video editor). Both run on global keyboard shortcuts.
 
 It was built from Sizeup2, the Swift replacement for the unmaintained SizeUp,
@@ -131,7 +130,6 @@ over thousands of window moves is the specification, not a starting point. See
 | ⌃⌥⇧↓ | Lower Left |
 | ⌃⌥⇧→ | Lower Right |
 | ⌃⌥← / → | Previous / Next Display |
-| ⌃⌘← / → | Previous / Next Space |
 
 The quarter bindings follow SizeUp's default arrow assignment, which runs
 **clockwise from the left arrow** rather than mapping arrows to corners
@@ -140,8 +138,8 @@ lower right. This looks like a bug. It is not — it is how the arrows were
 originally laid out in SizeUp, and changing it would break existing muscle
 memory.
 
-The menu-bar menu lists every action (in **Window**, **Display**, and
-**Spaces** submenus) with its current shortcut, and names any shortcut another
+The menu-bar menu lists every action (in **Window** and **Display** submenus)
+with its current shortcut, and names any shortcut another
 app has already claimed.
 
 ### Size cycling, gaps, and the skip list
@@ -153,10 +151,26 @@ app has already claimed.
 - **Gaps.** Space between tiled windows and from the screen edge; both default
   to 0 (flush tiling) and both are capped at 100.
 - **Skip list.** Applications ClipShot leaves alone entirely.
-- **Spaces.** ⌃⌘←/→ move the focused window between Spaces, optionally
-  following it there. This uses a private system interface that can break on a
-  macOS update; the blast radius is those two shortcuts, and the menu says
-  "(unavailable on this macOS)" beside them if it does.
+
+### No "move window to Space"
+
+SizeUp could send a window to the next or previous Space, and earlier builds of
+this app offered the same thing. It is gone, because macOS no longer allows it.
+
+The only way to move another application's window between Spaces is the private
+SkyLight call `SLSMoveWindowsToManagedSpace`. On macOS 26 it returns without
+moving anything — verified against a real window, and against the calling
+process's *own* window, so it is not a permissions problem that a grant could
+fix. The documented alternative (`SLSSpaceAddWindowsAndRemoveFromSpaces`) does
+nothing either. Reading the Space layout still works, and *switching* the
+displayed Space still works; only moving a window does not.
+
+Four shortcuts that silently do nothing are worse than four shortcuts that are
+not there, so the feature, its private-API wrapper, and its setting were all
+removed. A settings file or a SizeUp plist that still binds them loads fine —
+those bindings are dropped, and the SizeUp importer reports them as skipped so
+the count it shows you is honest. Use macOS's own ⌃← / ⌃→ to change Spaces, or
+drag the window in Mission Control.
 
 ## Screen capture
 
@@ -243,8 +257,8 @@ installing; `make run` builds and runs from `build/`.
 Open **Settings…** from the menu-bar menu (⌘,). Three tabs:
 
 - **General** — launch at login, the two permission rows, and capture behavior.
-- **Window** — gaps, size cycling, Spaces, and the skip list.
-- **Shortcuts** — rebind or clear any of the 18 shortcuts, plus one-click
+- **Window** — gaps, size cycling, and the skip list.
+- **Shortcuts** — rebind or clear any of the 15 shortcuts, plus one-click
   import from SizeUp or the standalone ClipShot.
 
 Settings are stored as JSON at `~/Library/Application Support/ClipShot/settings.json`

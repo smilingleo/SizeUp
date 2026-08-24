@@ -28,7 +28,6 @@ final class MenuBuilder {
         var hasAccessibility: Bool
         var handlerInstallFailed: Bool
         var registrationFailures: [RegistrationFailure]
-        var spacesAvailable: Bool
         var sessionMode: CaptureMode
     }
 
@@ -67,10 +66,6 @@ final class MenuBuilder {
 
         menu.addItem(submenuItem("Display", target: target, context: context) { sub in
             addBindings(sub, context: context, target: target, [.display(.next), .display(.previous)])
-        })
-
-        menu.addItem(submenuItem("Spaces", target: target, context: context) { sub in
-            addBindings(sub, context: context, target: target, [.space(.next), .space(.previous)])
         })
 
         addStandardTail(menu, target: target)
@@ -127,7 +122,7 @@ final class MenuBuilder {
 
     private func addStandardTail(_ menu: NSMenu, target: AnyObject) {
         // The app's own rows are not window actions; without this they read as
-        // the tail of the Spaces group.
+        // the tail of the Display group.
         menu.addItem(.separator())
 
         let settings = NSMenuItem(title: "Settings…",
@@ -163,9 +158,8 @@ final class MenuBuilder {
     }
 
     /// One action row, with the honest suffixes M1–M5 established: "(no
-    /// shortcut)" when unbound, "(…reason…)" when another app claimed the keys,
-    /// and "(unavailable on this macOS)" beside a Space item whose private API
-    /// did not resolve.
+    /// shortcut)" when unbound, and "(…reason…)" when another app claimed the
+    /// keys.
     private func makeRow(_ action: Action, context: Context, target: AnyObject,
                          titleOverride: String? = nil) -> NSMenuItem {
         let binding = context.keymap.bindings.first { $0.action == action }
@@ -183,12 +177,6 @@ final class MenuBuilder {
         if !context.handlerInstallFailed, let shortcut = binding?.shortcut,
            let failure = context.registrationFailures.first(where: { $0.shortcut == shortcut }) {
             item.title += "  (\(failure.explanation))"
-        }
-        if case .space = action, !context.spacesAvailable {
-            item.title += "  (unavailable on this macOS)"
-            item.toolTip =
-                "ClipShot moves windows between Spaces using a private system interface "
-                + "that this version of macOS does not provide."
         }
         return item
     }

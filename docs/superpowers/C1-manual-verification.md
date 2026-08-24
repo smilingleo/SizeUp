@@ -77,9 +77,13 @@ indistinguishable.
 ## 3. Menu
 
 - [ ] **Capture section** is top-level: Screenshot ⌃⌘A, Record Screen ⌃⌘Z.
-- [ ] **Three submenus**: `Window ▸` (halves / corners / full screen, center,
-      snap back), `Display ▸` (next / previous), `Spaces ▸` (next / previous).
-      Every one of the 15 window actions is reachable in two clicks.
+- [ ] **Two submenus**: `Window ▸` (halves / corners / full screen, center,
+      snap back) and `Display ▸` (next / previous). Every one of the 13 window
+      actions is reachable in two clicks.
+- [ ] There is **no `Spaces ▸` submenu**. The feature was removed because macOS
+      stopped honouring the private call that moves a window between Spaces.
+      ⌃⌘← / ⌃⌘→ are now unbound by this app, so they should do what macOS does
+      with them: switch Spaces.
 - [ ] Every row shows its shortcut in a right-aligned column, lined up within
       each menu. Check the shortcut shown is the one *in force*: rebind something
       in Settings and confirm the menu follows.
@@ -88,8 +92,7 @@ indistinguishable.
       twice.
 - [ ] The honest suffixes survive the
       move into submenus: `(no shortcut)` when unbound, `(…reason…)` when
-      another app claimed the keys, `(unavailable on this macOS)` beside a Space
-      item whose private API is absent.
+      another app claimed the keys.
 - [ ] **Help** opens the docs site (`smilingleo.github.io/clipshot-docs`).
 - [ ] **Quit ClipShot** (⌘Q) is labeled ClipShot, not Sizeup2.
 - [ ] The SizeUp importer and "Open at Login" are **gone from the menu** (they
@@ -139,9 +142,18 @@ entry (`tccutil reset ScreenCapture com.lliu.sizeup2`) and relaunching:
 
 - [ ] Halves, quarters, full screen, center, snap back all behave exactly as
       before the merge.
-- [ ] Multi-display tiling, Size cycling (½/⅓ repeat), gaps, the skip list, and
-      Spaces all behave exactly as M5 left them. **Nothing** about window
-      management changed in C1 — if any of these feels different, it is a bug.
+- [ ] Multi-display tiling, Size cycling (½/⅓ repeat), gaps and the skip list
+      all behave exactly as M5 left them. Apart from the removal of Spaces,
+      **nothing** about window management has changed — if any of these feels
+      different, it is a bug.
+- [ ] Your existing `settings.json` still loads. It contains a
+      `followsWindowToSpace` key and may contain `space.*` shortcut overrides;
+      both are ignored, and your gaps, cycle and other shortcuts must be intact.
+      Change any setting and confirm the stale keys are dropped on save.
+- [ ] **Settings → Window** has no "Spaces" section.
+- [ ] **Settings → Shortcuts** lists 15 rows, none of them a Space move.
+- [ ] Run the SizeUp importer. If your SizeUp plist binds any Space key, the
+      alert must **name them as skipped** rather than pretend they imported.
 
 ---
 

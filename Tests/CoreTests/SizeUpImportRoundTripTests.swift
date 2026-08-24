@@ -43,14 +43,14 @@ struct SizeUpImportRoundTripTests {
 
     @Test func importingTheRealSizeUpFileReproducesDefaultKeymapForEveryBoundAction() throws {
         let imported = SizeUpImporter.read(at: fixtureURL)
-        // Space Above/Space Below are skipped: macOS has had a single
-        // horizontal strip of Spaces per display since Lion, so neither has
-        // a real neighbour to move to.
-        #expect(imported.skipped == ["Space Above", "Space Below"])
+        // All four Space keys are skipped: the Spaces feature was removed once
+        // macOS stopped honouring the private call that moves a window between
+        // Spaces, so there is no action left to bind them to.
+        #expect(imported.skipped == ["Space Above", "Space Below", "Space Next", "Space Prev"])
 
         let resolved = KeymapResolver.resolve(overrides: overrides(from: imported.overrides)).bindings
 
-        #expect(DefaultKeymap.bindings.count == 17) // 15 window + 2 capture (the merge)
+        #expect(DefaultKeymap.bindings.count == 15) // 13 window + 2 capture (the merge)
 
         for (defaultShortcut, action) in DefaultKeymap.bindings {
             let binding = try #require(resolved.first { $0.action == action })

@@ -106,11 +106,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// mutating six properties and cannot end up half-applied. Reusing `store`
     /// is the point: a preferences change must not cost the user their Snap Back
     /// origins.
-    /// Built once and reused. Resolving the private symbols is cheap, but
-    /// `isAvailable` is read while building the menu and it should not depend on
-    /// how many times the router has been rebuilt.
-    private let spaces = SystemSpaceController()
-
     private func rebuildRouter() {
         let screens = SystemScreenProvider()
         let current = settings.settings
@@ -122,9 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             store: store,
             gaps: current.gaps.resolved,
             spans: current.resolvedCycle,
-            skipList: Set(current.skippedBundleIdentifiers),
-            spaces: spaces,
-            followsWindowToSpace: current.followsWindowToSpace
+            skipList: Set(current.skippedBundleIdentifiers)
         )
     }
 
@@ -275,7 +268,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             hasAccessibility: AccessibilityPermission.isGranted,
             handlerInstallFailed: hotkeys.handlerInstallFailed,
             registrationFailures: hotkeys.registrationFailures,
-            spacesAvailable: spaces.isAvailable,
             sessionMode: session.mode
         )
         let menu = MenuBuilder().build(context, target: self)

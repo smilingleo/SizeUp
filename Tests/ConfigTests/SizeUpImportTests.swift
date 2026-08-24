@@ -13,17 +13,17 @@ private var fixtureURL: URL {
         .appendingPathComponent("Fixtures/sizeup-user-config.plist")
 }
 
-@Test func importingTheFixtureYieldsFifteenKeysAndSkipsTheTwoSpacesDirectionsWithNoNeighbour() {
+@Test func importingTheFixtureYieldsThirteenKeysAndSkipsAllFourSpacesKeys() {
     let result = SizeUpImporter.read(at: fixtureURL)
 
-    // Space Above/Space Below are skipped, not imported: macOS has had a
-    // single horizontal strip of Spaces per display since Lion, so neither
-    // has a real neighbour to move to.
-    #expect(result.overrides.count == 15)
-    #expect(result.skipped == ["Space Above", "Space Below"])
+    // All four Space keys are skipped, not imported: this app has no Spaces
+    // feature to bind them to. Reported (not dropped) so the import alert can
+    // tell a user who had them bound that they did not come across.
+    #expect(result.overrides.count == 13)
+    #expect(result.skipped == ["Space Above", "Space Below", "Space Next", "Space Prev"])
 }
 
-@Test func importedActionsCoverEveryHalfQuarterAndSpaceIdentifier() {
+@Test func importedActionsCoverEveryHalfQuarterAndDisplayIdentifier() {
     let result = SizeUpImporter.read(at: fixtureURL)
     let actions = Set(result.overrides.map(\.action))
 
@@ -32,7 +32,6 @@ private var fixtureURL: URL {
         "quarter.upperLeft", "quarter.upperRight", "quarter.lowerLeft", "quarter.lowerRight",
         "fullScreen", "center", "snapBack",
         "display.next", "display.previous",
-        "space.next", "space.previous",
     ]
     #expect(actions == expected)
 }
@@ -118,8 +117,8 @@ private var fixtureURL: URL {
 }
 
 @Test func aKeyAbsentFromTheFileIsNeitherImportedNorReportedAsSkipped() throws {
-    // Absent is not the same as unusable: a user who never touched Space
-    // Above should not see it listed as a failed import.
+    // Absent is not the same as unusable: a user who never touched Center
+    // should not see it listed as a failed import.
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
@@ -180,8 +179,6 @@ private var fixtureURL: URL {
         "display.previous",   // Prev Monitor
         "half.right",         // Right
         "snapBack",           // SnapBack
-        "space.next",         // Space Next
-        "space.previous",     // Space Prev
         "half.top",           // Up
         "quarter.upperLeft",  // Upper Left
         "quarter.upperRight", // Upper Right

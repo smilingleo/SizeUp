@@ -111,14 +111,15 @@ import Hotkeys
 }
 
 @Test func anOverrideForAnActionDefaultKeymapDoesNotBindIsIgnoredRatherThanAppended() {
-    // `.space(.above)`/`.space(.below)` have no default binding: macOS has no
-    // vertical neighbour for either to reach (see `SpaceSequence`'s doc).
-    let overrides = [ShortcutOverride(action: .space(.above), keyCode: 5, modifierFlags: 6)]
+    // `.display(.above)`/`.display(.below)` have no default binding: they exist
+    // because SizeUp had them, and a display stacked above another is rare
+    // enough that shipping a key for it would waste one.
+    let overrides = [ShortcutOverride(action: .display(.above), keyCode: 5, modifierFlags: 6)]
 
     let resolved = KeymapResolver.resolve(overrides: overrides).bindings
 
     #expect(resolved.count == DefaultKeymap.bindings.count)
-    #expect(!resolved.contains { $0.action == .space(.above) })
+    #expect(!resolved.contains { $0.action == .display(.above) })
     for (binding, (defaultShortcut, action)) in zip(resolved, DefaultKeymap.bindings) {
         #expect(binding.action == action)
         #expect(binding.shortcut == defaultShortcut)
@@ -211,9 +212,8 @@ extension Action {
 /// into `DefaultKeymap` — so an override for an action with no default entry was
 /// invisible to it and could not be displaced.
 ///
-/// A SizeUp import creates such overrides for `space.above`/`space.below`,
-/// which have no default binding because macOS has no vertical neighbour for
-/// either to reach. Left in the file, one of them is a hidden second claim on
+/// A SizeUp import creates such overrides for `display.above`/`display.below`,
+/// which have no default binding. Left in the file, one of them is a hidden second claim on
 /// the key, inert only until something else binds it and `unbindLosers` kills
 /// one of them without saying so. That is precisely the "presses a key that
 /// will never work again" outcome the import's own alert was written to
@@ -223,18 +223,19 @@ extension Action {
     let contested = Shortcut(keyCode: 105, modifierFlags: 1_835_008)
     let imported = [
         ShortcutOverride(
-            action: .space(.above),
+            action: .display(.above),
             keyCode: contested.keyCode,
             modifierFlags: contested.modifierFlags
         )
     ]
-    #expect(!KeymapResolver.resolve(overrides: imported).bindings.contains { $0.action == .space(.above) })
+    #expect(!KeymapResolver.resolve(overrides: imported).bindings
+        .contains { $0.action == .display(.above) })
 
     let (next, displaced) = KeymapResolver.assigning(contested, to: .center, in: imported)
 
-    #expect(displaced == [.space(.above)])
-    let spaceEntry = try #require(next.first { $0.action == .space(.above) })
-    #expect(spaceEntry.keyCode == nil)
+    #expect(displaced == [.display(.above)])
+    let orphan = try #require(next.first { $0.action == .display(.above) })
+    #expect(orphan.keyCode == nil)
     #expect(next.filter { $0.keyCode == contested.keyCode }.count == 1)
 }
 
@@ -282,12 +283,12 @@ extension Action {
     let elsewhere = Shortcut(keyCode: 79, modifierFlags: 1_835_008)
     let file = [
         ShortcutOverride(
-            action: .space(.next),
+            action: .display(.above),
             keyCode: contested.keyCode,
             modifierFlags: contested.modifierFlags
         ),
         ShortcutOverride(
-            action: .space(.next),
+            action: .display(.above),
             keyCode: elsewhere.keyCode,
             modifierFlags: elsewhere.modifierFlags
         ),
@@ -296,7 +297,7 @@ extension Action {
     let (next, displaced) = KeymapResolver.assigning(contested, to: .center, in: file)
 
     #expect(displaced.isEmpty)
-    let surviving = try #require(next.last { $0.action == .space(.next) })
+    let surviving = try #require(next.last { $0.action == .display(.above) })
     #expect(surviving.keyCode == elsewhere.keyCode)
 }
 
@@ -306,7 +307,7 @@ extension Action {
     let contested = Shortcut(keyCode: 80, modifierFlags: 1_835_008)
     let duplicated = Array(
         repeating: ShortcutOverride(
-            action: .space(.above),
+            action: .display(.above),
             keyCode: contested.keyCode,
             modifierFlags: contested.modifierFlags
         ),
@@ -315,8 +316,8 @@ extension Action {
 
     let (next, displaced) = KeymapResolver.assigning(contested, to: .center, in: duplicated)
 
-    #expect(displaced == [.space(.above)])
-    #expect(next.filter { $0.action == .space(.above) }.count == 1)
+    #expect(displaced == [.display(.above)])
+    #expect(next.filter { $0.action == .display(.above) }.count == 1)
 }
 
 // MARK: - The capture side of the merge
@@ -342,23 +343,23 @@ extension Action {
     #expect(resolution.conflicts.isEmpty)
 }
 
-@Test func aFullKeymapHoldsSeventeenActions() {
-    // 15 window actions + 2 capture actions. The four dead SizeUp bindings
-    // (display/space above/below) have no default and so add no rows; the
-    // count is the stable "what does this keymap actually bind" figure.
-    #expect(DefaultKeymap.bindings.count == 17)
+@Test func aFullKeymapHoldsFifteenActions() {
+    // 13 window actions + 2 capture actions. The two dead SizeUp bindings
+    // (display above/below) have no default and so add no rows; the count is
+    // the stable "what does this keymap actually bind" figure.
+    #expect(DefaultKeymap.bindings.count == 15)
     let resolved = KeymapResolver.resolve(overrides: [])
-    #expect(resolved.bindings.count == 17)
-    // Every one of the 17 is bound (none ship unbound by default).
+    #expect(resolved.bindings.count == 15)
+    // Every one of the 15 is bound (none ship unbound by default).
     #expect(resolved.bindings.allSatisfy { $0.shortcut != nil })
 }
 
-@Test func restoringDefaultsRecoversAllSeventeenBindings() {
+@Test func restoringDefaultsRecoversAllFifteenBindings() {
     // `restoreDefaults` writes an empty overrides list, which resolves to the
-    // full default keymap — all 17, none nil. This is the round trip the
+    // full default keymap — all 15, none nil. This is the round trip the
     // Shortcuts tab's "Restore Defaults" button depends on.
     let resolution = KeymapResolver.resolve(overrides: [])
-    #expect(resolution.bindings.count == 17)
+    #expect(resolution.bindings.count == 15)
     #expect(resolution.bindings.allSatisfy { $0.shortcut != nil })
     for (defaultShortcut, action) in DefaultKeymap.bindings {
         #expect(resolution.shortcut(for: action) == defaultShortcut)

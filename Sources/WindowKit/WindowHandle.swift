@@ -21,14 +21,6 @@ public struct WindowKey: Hashable, Sendable {
 public protocol WindowHandle: AnyObject {
     var key: WindowKey { get }
     var bundleIdentifier: String? { get }
-    /// The window's `CGWindowID`, needed to move it between Spaces via
-    /// `SpaceControlling`. `nil` when it cannot be derived — no private API
-    /// available, or the window has since closed — in which case a Spaces
-    /// shortcut must do nothing rather than crash.
-    /// Required, not defaulted. A conformer that quietly inherited `nil` would
-    /// disable Spaces for its windows with nothing to indicate why; making it a
-    /// requirement means a new window type has to decide.
-    var windowID: UInt32? { get }
     func frame() -> CGRect?
     /// Applies a frame and returns what was actually achieved, which may
     /// differ if the application enforces a minimum or maximum size.

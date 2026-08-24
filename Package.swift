@@ -20,12 +20,8 @@ let package = Package(
     ],
     targets: [
         .target(name: "Geometry"),
-        // Depends on SpaceKit purely for `_AXUIElementGetWindow`. The alternative was a
-        // second private-symbol lookup here, and "every private symbol lives in SpaceKit"
-        // is a rule worth more than avoiding one slightly odd edge.
-        .target(name: "WindowKit", dependencies: ["Geometry", "SpaceKit"]),
+        .target(name: "WindowKit", dependencies: ["Geometry"]),
         .target(name: "Hotkeys"),
-        .target(name: "SpaceKit", dependencies: ["Geometry"]),
         .target(name: "Core", dependencies: ["Geometry", "WindowKit", "Hotkeys"]),
         .target(name: "Config", dependencies: ["Geometry"]),
         // The capture side of the merge. `Capture` and `Annotation` are AppKit-free
@@ -38,11 +34,10 @@ let package = Package(
         // is why `Compositor` had to live in `App` and video export does not.
         .target(name: "VideoEdit", dependencies: ["Annotation", "Capture"]),
         .target(name: "OverlayUI", dependencies: ["Capture", "Annotation", "VideoEdit"]),
-        .executableTarget(name: "App", dependencies: ["Geometry", "WindowKit", "Hotkeys", "Core", "Config", "SpaceKit", "Capture", "Annotation", "VideoEdit", "OverlayUI"]),
+        .executableTarget(name: "App", dependencies: ["Geometry", "WindowKit", "Hotkeys", "Core", "Config", "Capture", "Annotation", "VideoEdit", "OverlayUI"]),
         .testTarget(name: "GeometryTests", dependencies: ["Geometry", testing]),
         .testTarget(name: "WindowKitTests", dependencies: ["WindowKit", "Geometry", testing]),
         .testTarget(name: "HotkeysTests", dependencies: ["Hotkeys", testing]),
-        .testTarget(name: "SpaceKitTests", dependencies: ["SpaceKit", "Geometry", testing]),
         .testTarget(name: "CaptureTests", dependencies: ["Capture", testing]),
         .testTarget(name: "AnnotationTests", dependencies: ["Annotation", testing]),
         .testTarget(name: "VideoEditTests", dependencies: ["VideoEdit", "Annotation", "Capture", testing]),

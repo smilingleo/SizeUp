@@ -62,10 +62,10 @@ final class CaptureSession: OverlayViewDelegate {
         switch action {
         case .captureScreenshot: event = .screenshotRequested
         case .startRecording: event = .recordRequested
-        // The fifteen window actions never reach this method — `App` routes
+        // The thirteen window actions never reach this method — `App` routes
         // them to the window router. Named (not `default`) so a new `Action`
         // case fails to compile here rather than being silently dropped.
-        case .half, .quarter, .center, .fullScreen, .snapBack, .display, .space:
+        case .half, .quarter, .center, .fullScreen, .snapBack, .display:
             event = nil
         }
         guard let event else { return }

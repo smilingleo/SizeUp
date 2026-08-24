@@ -119,7 +119,7 @@ private func placement(
             return CGRect(x: usable.maxX - rightW, y: usable.minY, width: rightW, height: bottomH)
         }
 
-    case .snapBack, .display, .space:
+    case .snapBack, .display:
         return nil
 
     // Capture actions are not frame math. They appear here only because the

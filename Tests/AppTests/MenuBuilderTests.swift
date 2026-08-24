@@ -25,7 +25,6 @@ private func buildMenu(overrides: [(Shortcut?, Action)] = [],
         hasAccessibility: true,
         handlerInstallFailed: false,
         registrationFailures: [],
-        spacesAvailable: true,
         sessionMode: mode)
     return MenuBuilder().build(context, target: NSObject())
 }

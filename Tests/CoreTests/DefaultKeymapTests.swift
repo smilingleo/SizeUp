@@ -9,8 +9,6 @@ import Hotkeys
 @Test func matchesTheUsersSizeUpConfiguration() {
     let ctrlOptCmd: UInt = 1_835_008
     let ctrlOptShift: UInt = 917_504
-    // From the author's live SizeUp plist: ComboFlags 1310720, Carbon 4352.
-    let ctrlCmd: UInt = 1_310_720
 
     let expected: [(Shortcut, Action)] = [
         (Shortcut(keyCode: KeyCode.leftArrow, modifierFlags: ctrlOptCmd), .half(.left)),
@@ -29,9 +27,6 @@ import Hotkeys
         // above, minus the command modifier.
         (Shortcut(keyCode: KeyCode.rightArrow, modifierFlags: 786_432), .display(.next)),
         (Shortcut(keyCode: KeyCode.leftArrow, modifierFlags: 786_432), .display(.previous)),
-        // Next/Previous Space.
-        (Shortcut(keyCode: KeyCode.rightArrow, modifierFlags: ctrlCmd), .space(.next)),
-        (Shortcut(keyCode: KeyCode.leftArrow, modifierFlags: ctrlCmd), .space(.previous)),
     ]
 
     // The capture actions were merged into this keymap (C1) and sit ahead of
@@ -56,10 +51,10 @@ import Hotkeys
 }
 
 @Test func theCaptureDefaultsMatchClipShot() {
-    // The standalone ClipShot defaults, verbatim: control+command (1_310_720,
-    // the same mask as the Space moves) over A and Z. These are the user-facing
-    // capture shortcuts, so the test pins the exact values rather than
-    // re-deriving them from the (possibly edited) keymap.
+    // The standalone ClipShot defaults, verbatim: control+command (1_310_720)
+    // over A and Z. These are the user-facing capture shortcuts, so the test
+    // pins the exact values rather than re-deriving them from the (possibly
+    // edited) keymap.
     let ctrlCmd: UInt = 1_310_720
     func shortcut(for action: Action) -> Shortcut? {
         DefaultKeymap.bindings.first { $0.1 == action }?.0
@@ -73,6 +68,14 @@ import Hotkeys
     #expect(!DefaultKeymap.bindings.contains {
         $0.0 == Shortcut(keyCode: 1, modifierFlags: ctrlCmd)
     })
+    // ⌃⌘← / ⌃⌘→ belonged to the removed Space moves. They are now unbound, and
+    // must stay that way: macOS itself uses them to switch Spaces, so binding
+    // them would fight the system.
+    for arrow in [KeyCode.leftArrow, KeyCode.rightArrow] {
+        #expect(!DefaultKeymap.bindings.contains {
+            $0.0 == Shortcut(keyCode: arrow, modifierFlags: ctrlCmd)
+        })
+    }
 }
 
 @Test func theCaptureActionsHaveDistinctLabels() {
@@ -120,10 +123,6 @@ import Hotkeys
     #expect(DefaultKeymap.title(for: .display(.previous)) == "Previous Display")
     #expect(DefaultKeymap.title(for: .display(.above)) == "Display Above")
     #expect(DefaultKeymap.title(for: .display(.below)) == "Display Below")
-    #expect(DefaultKeymap.title(for: .space(.next)) == "Next Space")
-    #expect(DefaultKeymap.title(for: .space(.previous)) == "Previous Space")
-    #expect(DefaultKeymap.title(for: .space(.above)) == "Space Above")
-    #expect(DefaultKeymap.title(for: .space(.below)) == "Space Below")
 }
 
 @Test func everyBoundActionIsDistinctAndCarriesADistinctLabel() {

@@ -65,13 +65,16 @@ public enum ActionIdentifier {
         case "display.previous": return .display(.previous)
         case "display.above": return .display(.above)
         case "display.below": return .display(.below)
-        case "space.next": return .space(.next)
-        case "space.previous": return .space(.previous)
-        case "space.above": return .space(.above)
-        case "space.below": return .space(.below)
         // The capture side of the merge (ClipShot). Dotted identifiers, same
-        // convention as the display/space actions, so a hand-edited settings
-        // file reads the same way.
+        // convention as the display actions, so a hand-edited settings file
+        // reads the same way.
+        //
+        // Deliberately absent: `space.*` (the Spaces feature, removed once
+        // macOS stopped honouring the SkyLight window-move) and
+        // `capture.scrollCapture`. Both fall to `default` and resolve to nil,
+        // which is the point of a string table — an existing settings.json
+        // written by an older build stays loadable and simply drops those
+        // bindings, rather than failing to decode.
         case "capture.screenshot": return .captureScreenshot
         case "capture.record": return .startRecording
         default: return nil
@@ -97,10 +100,6 @@ public enum ActionIdentifier {
         case .display(.previous): return "display.previous"
         case .display(.above): return "display.above"
         case .display(.below): return "display.below"
-        case .space(.next): return "space.next"
-        case .space(.previous): return "space.previous"
-        case .space(.above): return "space.above"
-        case .space(.below): return "space.below"
         case .captureScreenshot: return "capture.screenshot"
         case .startRecording: return "capture.record"
         }
