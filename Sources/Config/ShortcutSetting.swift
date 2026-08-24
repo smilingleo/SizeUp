@@ -74,7 +74,6 @@ public enum ActionIdentifier {
         // file reads the same way.
         case "capture.screenshot": return .captureScreenshot
         case "capture.record": return .startRecording
-        case "capture.scrollCapture": return .toggleScrollCapture
         default: return nil
         }
     }
@@ -104,7 +103,6 @@ public enum ActionIdentifier {
         case .space(.below): return "space.below"
         case .captureScreenshot: return "capture.screenshot"
         case .startRecording: return "capture.record"
-        case .toggleScrollCapture: return "capture.scrollCapture"
         }
     }
 

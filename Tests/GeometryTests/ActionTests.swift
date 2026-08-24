@@ -18,7 +18,6 @@ import Testing
     // routing identifiers dispatched to the capture session, not placements.
     #expect(!Action.captureScreenshot.isPlacement)
     #expect(!Action.startRecording.isPlacement)
-    #expect(!Action.toggleScrollCapture.isPlacement)
 }
 
 @Test func captureActionsDoNotCycle() {
@@ -26,5 +25,4 @@ import Testing
     // ClipShot did: start (or stop) — never advance through a size cycle.
     #expect(!Action.captureScreenshot.cycles)
     #expect(!Action.startRecording.cycles)
-    #expect(!Action.toggleScrollCapture.cycles)
 }

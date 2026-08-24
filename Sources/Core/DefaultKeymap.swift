@@ -21,11 +21,10 @@ public enum DefaultKeymap {
         // The capture side of the merge. ⌃⌘ (control and command, no option —
         // the existing `ctrlCmd` mask, 1_310_720) is free of every window
         // binding above and of macOS 26's built-in tiling shortcuts (which use
-        // ⌃⌥ together with `fn`), so the three capture actions share it with
+        // ⌃⌥ together with `fn`), so the capture actions share it with
         // nothing. These are the standalone ClipShot defaults, verbatim.
         (Shortcut(keyCode: KeyCode.a, modifierFlags: ctrlCmd), .captureScreenshot),
         (Shortcut(keyCode: KeyCode.z, modifierFlags: ctrlCmd), .startRecording),
-        (Shortcut(keyCode: KeyCode.s, modifierFlags: ctrlCmd), .toggleScrollCapture),
         (Shortcut(keyCode: KeyCode.leftArrow, modifierFlags: ctrlOptCmd), .half(.left)),
         (Shortcut(keyCode: KeyCode.rightArrow, modifierFlags: ctrlOptCmd), .half(.right)),
         (Shortcut(keyCode: KeyCode.upArrow, modifierFlags: ctrlOptCmd), .half(.top)),
@@ -79,7 +78,6 @@ public enum DefaultKeymap {
         case .space(.below): return "Space Below"
         case .captureScreenshot: return "Screenshot"
         case .startRecording: return "Record Screen"
-        case .toggleScrollCapture: return "Scroll Capture"
         }
     }
 }

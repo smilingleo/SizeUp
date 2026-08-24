@@ -10,7 +10,6 @@ public enum CaptureMode: Equatable, Sendable {
     case idle
     case capturing
     case recording
-    case scrollCapturing
     case editing
 }
 
@@ -23,7 +22,6 @@ public enum CaptureMode: Equatable, Sendable {
 public enum CaptureEvent: Equatable, Sendable {
     case screenshotRequested
     case recordRequested
-    case scrollRequested
     case overlayConfirmed
     case overlayCancelled
     case recordingStopped
@@ -41,8 +39,6 @@ public enum CaptureEffect: Equatable, Sendable {
     case beginRecording
     /// The region is chosen — start rolling frames.
     case startRecordingSession
-    /// Show the overlay in scroll-capture mode. (C5)
-    case beginScrollCapture
     /// Hide the overlay and copy the crop to the clipboard. (C1)
     case dismissAndCopy
     /// Hide the overlay with no side effect (the user cancelled).
@@ -59,12 +55,11 @@ public enum CaptureEffect: Equatable, Sendable {
 
 /// Which capture features this build implements.
 ///
-/// The machine is written for the full C1–C5 feature set; the capability set
-/// is what makes a milestone's behavior fall out of it. C1 is `.screenshot`
-/// alone, so `record`/`scroll` requests resolve to `.notYetAvailable` (the
-/// honest "coming in a later build" alert in `App`) and only `.capturing` is
-/// reachable. C3 adds `.recording`, C5 adds `.scrollCapture` — no change to the
-/// transition table, only the set.
+/// The capability set is what makes a build's behaviour fall out of the same
+/// transition table: a request for something this build does not implement
+/// resolves to `.notYetAvailable` rather than needing an arm of its own. Both
+/// capture features ship now, so the set remains only because it keeps "can I?"
+/// out of the transition logic and makes the refusals testable.
 public struct CaptureCapabilities: OptionSet, Sendable {
     public let rawValue: Int
 
@@ -72,7 +67,8 @@ public struct CaptureCapabilities: OptionSet, Sendable {
 
     public static let screenshot = CaptureCapabilities(rawValue: 1 << 0)
     public static let recording = CaptureCapabilities(rawValue: 1 << 1)
-    public static let scrollCapture = CaptureCapabilities(rawValue: 1 << 2)
+    // 1 << 2 belonged to the removed scroll capture. Bit values are not reused:
+    // a stale set from anywhere would otherwise quietly mean something else.
     public static let editing = CaptureCapabilities(rawValue: 1 << 3)
 }
 
@@ -82,8 +78,8 @@ public struct CaptureCapabilities: OptionSet, Sendable {
 /// Every mode is a `case` and every event in every mode is named, so a new
 /// mode or event fails to compile instead of silently getting `default`'d into
 /// the wrong behavior. The exclusion rules the design calls out are explicit
-/// arms, not comments: no screenshot while recording/editing/scroll-capturing,
-/// no recording while editing.
+/// arms, not comments: no screenshot while recording or editing, and no
+/// recording while editing.
 public struct CaptureStateMachine: Equatable, Sendable {
     public private(set) var mode: CaptureMode
     public let capabilities: CaptureCapabilities
@@ -137,11 +133,7 @@ public struct CaptureStateMachine: Equatable, Sendable {
                 return capabilities.contains(.recording)
                     ? (.recording, .beginRecording)
                     : (.idle, .notYetAvailable)
-            case .scrollRequested:
-                return capabilities.contains(.scrollCapture)
-                    ? (.scrollCapturing, .beginScrollCapture)
-                    : (.idle, .notYetAvailable)
-            // Not in any mode; the rest are no-ops here.
+             // Not in any mode; the rest are no-ops here.
             case .overlayConfirmed, .overlayCancelled, .recordingStopped,
                  .editorOpened, .editorClosed:
                 return (.idle, .none)
@@ -155,7 +147,7 @@ public struct CaptureStateMachine: Equatable, Sendable {
                 return (.idle, .dismiss)
             // A second press of *any* capture action while an overlay is up
             // must not stack a second overlay.
-            case .screenshotRequested, .recordRequested, .scrollRequested:
+            case .screenshotRequested, .recordRequested:
                 return (.capturing, .refused)
             case .recordingStopped, .editorOpened, .editorClosed:
                 return (.capturing, .none)
@@ -182,19 +174,8 @@ public struct CaptureStateMachine: Equatable, Sendable {
             // not need a different chord to stop than it did to start.
             case .recordRequested:
                 return (.idle, .stopRecording)
-            case .scrollRequested, .editorOpened, .editorClosed:
+            case .editorOpened, .editorClosed:
                 return (.recording, .none)
-            }
-
-        case .scrollCapturing:
-            switch event {
-            // No screenshot while scroll-capturing.
-            case .screenshotRequested:
-                return (.scrollCapturing, .refused)
-            case .scrollRequested, .recordRequested,
-                 .overlayConfirmed, .overlayCancelled, .recordingStopped,
-                 .editorOpened, .editorClosed:
-                return (.scrollCapturing, .none)
             }
 
         case .editing:
@@ -204,7 +185,7 @@ public struct CaptureStateMachine: Equatable, Sendable {
                 return (.editing, .refused)
             case .editorClosed:
                 return (.idle, .none)
-            case .scrollRequested, .overlayConfirmed, .overlayCancelled, .recordingStopped,
+            case .overlayConfirmed, .overlayCancelled, .recordingStopped,
                  .editorOpened:
                 return (.editing, .none)
             }

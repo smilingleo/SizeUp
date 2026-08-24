@@ -16,7 +16,7 @@ import Foundation
         .display(.next), .display(.previous), .display(.above), .display(.below),
         .space(.next), .space(.previous), .space(.above), .space(.below),
         // The capture side of the merge: same round-trip discipline.
-        .captureScreenshot, .startRecording, .toggleScrollCapture,
+        .captureScreenshot, .startRecording,
     ]
     for action in actions {
         let identifier = ActionIdentifier.identifier(for: action)
@@ -29,6 +29,10 @@ import Foundation
     // A capture identifier a FUTURE version adds (or a typo) must be ignored,
     // not crash the settings read: the same rule as every other unknown.
     #expect(ActionIdentifier.action(for: "capture.diagonal") == nil)
+    // A REMOVED identifier is the same case, and a live one: anybody who used
+    // scroll capture has this string in their settings file. It must be dropped
+    // quietly, leaving the rest of their shortcuts intact.
+    #expect(ActionIdentifier.action(for: "capture.scrollCapture") == nil)
 }
 
 @Test func aShiftOnlyBindingResolvesToNil() {

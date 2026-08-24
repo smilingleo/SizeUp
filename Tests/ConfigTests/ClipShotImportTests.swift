@@ -15,14 +15,16 @@ struct ClipShotImportTests {
             .appendingPathComponent("Fixtures/clipshot-config.ini")
     }
 
-    @Test func theFixtureImportsThreeCaptureOverrides() {
+    @Test func theFixtureImportsTheCaptureOverrides() {
         let result = ClipShotImporter.read(at: fixtureURL)
-        // The fixture has all three hotkeys, all bound, none skipped.
-        #expect(result.overrides.count == 3)
+        // The fixture still carries the Rust app's scroll-capture hotkey. That
+        // feature is gone, so the key is not imported and not reported as a
+        // failure either -- there is nothing the user could do about it.
+        #expect(result.overrides.count == 2)
         #expect(result.skipped.isEmpty)
 
         let actions = Set(result.overrides.map(\.action))
-        #expect(actions == Set(["capture.screenshot", "capture.record", "capture.scrollCapture"]))
+        #expect(actions == Set(["capture.screenshot", "capture.record"]))
 
         // The defaults map onto the same vkeys the Swift `DefaultKeymap` uses
         // for the capture actions (A/Z/S under Ctrl+Cmd): importing the
@@ -30,7 +32,7 @@ struct ClipShotImportTests {
         let byAction = Dictionary(uniqueKeysWithValues: result.overrides.map { ($0.action, $0) })
         #expect(byAction["capture.screenshot"]?.keyCode == 0)   // A
         #expect(byAction["capture.record"]?.keyCode == 6)       // Z
-        #expect(byAction["capture.scrollCapture"]?.keyCode == 1) // S
+        #expect(byAction["capture.scrollCapture"] == nil)
     }
 
     @Test func aReboundHotkeyImportsItsRebinding() {
@@ -55,7 +57,9 @@ struct ClipShotImportTests {
         )
         let result = ClipShotImporter.read(at: url)
         #expect(result.overrides.count == 1)               // only record
-        #expect(Set(result.skipped) == Set(["capture_hotkey", "scroll_capture_hotkey"]))
+        // The unparseable scroll key is not reported: the feature is gone, so it
+        // was never going to be imported anyway.
+        #expect(Set(result.skipped) == Set(["capture_hotkey"]))
     }
 
     @Test func aModifierlessHotkeyIsRefused() {

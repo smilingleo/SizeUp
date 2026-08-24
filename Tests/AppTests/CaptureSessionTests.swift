@@ -67,21 +67,18 @@ import Testing
     #expect(effect == .dismiss)
 }
 
-@Test func recordAndScrollBeforeC3AreNoOpsThatDoNotChangeState() {
-    // C1's honest absence: with only screenshot enabled, the record and scroll
-    // requests resolve to `notYetAvailable` (the "coming in a later build"
-    // alert in App) and the mode does not move.
+@Test func aRequestForSomethingTheBuildLacksIsAnHonestNoOp() {
+    // With only screenshot enabled the record request resolves to
+    // `notYetAvailable` -- an alert, not silence -- and the mode does not move.
     var machine = CaptureStateMachine(capabilities: .screenshot)
 
     #expect(machine.handle(.recordRequested) == .notYetAvailable)
     #expect(machine.mode == .idle)
-    #expect(machine.handle(.scrollRequested) == .notYetAvailable)
-    #expect(machine.mode == .idle)
 }
 
 @Test func whenRecordingIsEnabledTheRequestStartsRecording() {
-    // The same request, a later milestone's capabilities: the table already
-    // knows what to do, so C3 is a set change, not a table change.
+    // The same request with the capability present: the table is unchanged, only
+    // the set differs.
     var machine = CaptureStateMachine(capabilities: [.screenshot, .recording])
 
     let effect = machine.handle(.recordRequested)
@@ -105,12 +102,6 @@ import Testing
     #expect(machine.mode == .idle)
 }
 
-@Test func screenshotIsExcludedWhileScrollCapturing() {
-    var machine = CaptureStateMachine(mode: .scrollCapturing, capabilities: [.screenshot, .scrollCapture])
-
-    #expect(machine.handle(.screenshotRequested) == .refused)
-    #expect(machine.mode == .scrollCapturing)
-}
 
 @Test func aFailedCaptureResetsToIdleViaTheRecoveryHook() {
     // The machine advanced to .capturing before the pipeline ran; a failure

@@ -323,7 +323,7 @@ extension Action {
 
 @Test func bindingACaptureShortcutToAWindowActionDisplacesTheCaptureAction() throws {
     // The unified conflict detection the design promises: the resolver sees all
-    // 18 actions, so a user who records ⌃⌘A (Screenshot's default) for a window
+    // 17 actions, so a user who records ⌃⌘A (Screenshot's default) for a window
     // action does not silently kill screenshot capture — the capture action is
     // reported displaced, exactly as a window/window collision is today.
     let screenshot = try #require(
@@ -342,23 +342,23 @@ extension Action {
     #expect(resolution.conflicts.isEmpty)
 }
 
-@Test func aFullKeymapHoldsEighteenActions() {
-    // 15 window actions + 3 capture actions. The four dead SizeUp bindings
+@Test func aFullKeymapHoldsSeventeenActions() {
+    // 15 window actions + 2 capture actions. The four dead SizeUp bindings
     // (display/space above/below) have no default and so add no rows; the
     // count is the stable "what does this keymap actually bind" figure.
-    #expect(DefaultKeymap.bindings.count == 18)
+    #expect(DefaultKeymap.bindings.count == 17)
     let resolved = KeymapResolver.resolve(overrides: [])
-    #expect(resolved.bindings.count == 18)
-    // Every one of the 18 is bound (none ship unbound by default).
+    #expect(resolved.bindings.count == 17)
+    // Every one of the 17 is bound (none ship unbound by default).
     #expect(resolved.bindings.allSatisfy { $0.shortcut != nil })
 }
 
-@Test func restoringDefaultsRecoversAllEighteenBindings() {
+@Test func restoringDefaultsRecoversAllSeventeenBindings() {
     // `restoreDefaults` writes an empty overrides list, which resolves to the
-    // full default keymap — all 18, none nil. This is the round trip the
+    // full default keymap — all 17, none nil. This is the round trip the
     // Shortcuts tab's "Restore Defaults" button depends on.
     let resolution = KeymapResolver.resolve(overrides: [])
-    #expect(resolution.bindings.count == 18)
+    #expect(resolution.bindings.count == 17)
     #expect(resolution.bindings.allSatisfy { $0.shortcut != nil })
     for (defaultShortcut, action) in DefaultKeymap.bindings {
         #expect(resolution.shortcut(for: action) == defaultShortcut)

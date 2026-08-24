@@ -17,11 +17,9 @@ import OverlayUI
 /// (the logic worth testing) is in `Core`, and this class is the thin AppKit
 /// shell around it (exercised by the manual checklist, not unit tests).
 ///
-/// C1 implements the screenshot flow end-to-end. With `capabilities ==
-/// .screenshot`, the machine makes `.record`/`.scroll` requests resolve to
-/// `.notYetAvailable` — the honest "coming in a later build" alert — and only
-/// `.capturing` is reachable, so the recording/scroll arms here are the stubs
-/// the design specifies for C1, not dead code.
+/// Both capture flows are implemented end-to-end. A request the build does not
+/// support resolves to `.notYetAvailable` rather than doing nothing, which is
+/// what the capability set is for.
 @MainActor
 final class CaptureSession: OverlayViewDelegate {
     private var machine: CaptureStateMachine
@@ -58,13 +56,12 @@ final class CaptureSession: OverlayViewDelegate {
 
     // MARK: Dispatch (hotkey and menu both route here)
 
-    /// Perform one of the three capture actions. Non-capture actions are a no-op.
+    /// Perform one of the capture actions. Non-capture actions are a no-op.
     func perform(_ action: Action) {
         let event: CaptureEvent?
         switch action {
         case .captureScreenshot: event = .screenshotRequested
         case .startRecording: event = .recordRequested
-        case .toggleScrollCapture: event = .scrollRequested
         // The fifteen window actions never reach this method — `App` routes
         // them to the window router. Named (not `default`) so a new `Action`
         // case fails to compile here rather than being silently dropped.
@@ -96,11 +93,13 @@ final class CaptureSession: OverlayViewDelegate {
         case .dismiss:
             hideOverlay()
         case .notYetAvailable:
+            // No capture feature is unimplemented today, so this is unreachable
+            // unless a build ships with a capability switched off. It stays an
+            // honest alert rather than silence.
             showComingSoon()
         case .refused:
             NSLog("ClipShot: capture ignored — a capture is already in flight")
-        case .beginScrollCapture, .none:
-            // Scroll capture lands in C5.
+        case .none:
             break
         }
     }
@@ -286,8 +285,8 @@ final class CaptureSession: OverlayViewDelegate {
     // MARK: OverlayViewDelegate
 
     public func overlayView(_ view: OverlayView, didChangeSelection rect: CGRect?) {
-        // C1 has no auto-start on selection (that is the recording/scroll
-        // behavior, C3/C5). The selection is read at confirm time.
+        // Selecting a region does not start anything on its own; the selection
+        // is read at confirm time.
         //
         // The toolbar appears only once there is a region to annotate: before
         // that there is nothing for a tool to draw on, and a toolbar floating
@@ -518,13 +517,12 @@ final class CaptureSession: OverlayViewDelegate {
 
     // MARK: Alerts
 
-    /// The "coming in a later build" notice, now only for scroll capture.
+    /// Shown when a capture action is not available in this build. Reachable
+    /// only if a capability is switched off, which no shipping build does.
     private func showComingSoon() {
         let alert = NSAlert()
-        alert.messageText = "Coming in a later build"
-        alert.informativeText =
-            "Scroll capture lands in an upcoming ClipShot build. "
-            + "The shortcut stays registered; screenshot and recording work today."
+        alert.messageText = "Not available in this build"
+        alert.informativeText = "That capture feature is not enabled here."
         alert.addButton(withTitle: "OK")
         alert.runModal()
     }

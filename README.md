@@ -2,9 +2,8 @@
 
 A menu-bar app for macOS that does two jobs: it **manages windows** (the former
 Sizeup2 — halves, quarters, full screen, center, multi-display, Spaces, snap
-back) and it **captures the screen** (region screenshots with an annotation editor,
-screen recording, and — landing in a later build — scroll capture). Both run on
-global keyboard shortcuts.
+back) and it **captures the screen** (region screenshots with an annotation editor, and
+screen recording with a video editor). Both run on global keyboard shortcuts.
 
 It was built from Sizeup2, the Swift replacement for the unmaintained SizeUp,
 with the ClipShot capture suite merged in and rewritten in Swift. The name
@@ -17,7 +16,7 @@ ClipShot uses two independent macOS permissions, each gating only its own side:
 | Permission | Needed for | How it is asked |
 |---|---|---|
 | **Accessibility** | Every window action | Prompted on first launch; the menu shows "Waiting for Accessibility permission…" until granted. |
-| **Screen Recording** | Screenshot, recording, scroll capture | Prompted the first time you take a capture. |
+| **Screen Recording** | Screenshot and recording | Prompted the first time you take a capture. |
 
 They do not depend on each other: with only Accessibility you get the window
 manager; with only Screen Recording you get the capture tool. Until a
@@ -171,10 +170,11 @@ action) copies it to the clipboard, **Save** writes a PNG, and **Esc** cancels.
 |---|---|
 | ⌃⌘A | Screenshot |
 | ⌃⌘Z | Record Screen |
-| ⌃⌘S | Scroll Capture |
 
-**Scroll capture** is listed in the menu and bound to a shortcut but is not yet
-built; selecting it says so rather than doing nothing silently.
+Every menu row shows its own shortcut, so the keys are discoverable without
+opening Settings. They are drawn rather than bound: the shortcuts are already
+registered globally, and a real menu key equivalent would fire a second time
+whenever the menu happened to be open.
 
 ### Recording
 

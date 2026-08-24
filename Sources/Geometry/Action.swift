@@ -27,7 +27,6 @@ public enum Action: Sendable, Equatable {
     // mistake.
     case captureScreenshot
     case startRecording
-    case toggleScrollCapture
 
     /// True when repeated presses should advance through the fraction list.
     /// Only halves cycle: a cycling quarter varies on two axes and its
@@ -51,17 +50,17 @@ public enum Action: Sendable, Equatable {
         // Snap back, the moves, and the capture actions all leave the frame
         // untouched by `targetFrame`; App dispatches capture actions to the
         // capture session before the router is ever asked.
-        case .snapBack, .display, .space, .captureScreenshot, .startRecording,
-             .toggleScrollCapture: return false
+        case .snapBack, .display, .space, .captureScreenshot,
+             .startRecording: return false
         }
     }
 
-    /// True for the three capture actions. `App` routes them to the capture
-    /// session (region overlay / recording) rather than the window router, which
-    /// has no frame math for them.
+    /// True for the capture actions. `App` routes them to the capture session
+    /// (region overlay / recording) rather than the window router, which has no
+    /// frame math for them.
     public var isCapture: Bool {
         switch self {
-        case .captureScreenshot, .startRecording, .toggleScrollCapture: return true
+        case .captureScreenshot, .startRecording: return true
         case .half, .quarter, .center, .fullScreen, .snapBack, .display, .space:
             return false
         }

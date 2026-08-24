@@ -238,11 +238,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 accessibilityDescription: description
             )
         }
-        // The design's second icon state: a recording or scroll capture in
-        // flight shows a record dot instead of the normal asset. C1 never
-        // reaches it (only `.capturing` is reachable), but deriving it from the
-        // mode means C3 lights it up with no further change here.
-        if session.mode == .recording || session.mode == .scrollCapturing {
+        // The design's second icon state: a recording in flight shows a record
+        // dot instead of the normal asset.
+        if session.mode == .recording {
             return NSImage(
                 systemSymbolName: "record.circle.fill",
                 accessibilityDescription: description

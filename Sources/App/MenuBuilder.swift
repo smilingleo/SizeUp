@@ -43,20 +43,19 @@ final class MenuBuilder {
 
         addBanners(menu, context: context, target: target)
 
-        // While a *recording* is in flight the menu collapses to the active
-        // operation (the design). C1's only capture mode is `.capturing` — the
-        // region overlay — which is not a recording, so the window menu is still
-        // shown today; the collapse fires from C3 when `.recording`/
-        // `.scrollCapturing` become reachable.
-        if isRecordingMode(context.sessionMode) {
+        // While a recording is in flight the menu collapses to the active
+        // operation (the design). The region overlay is not a recording, so the
+        // window menu is still shown while framing one.
+        if context.sessionMode == .recording {
             addRecordingCollapse(menu, context: context, target: target)
             addStandardTail(menu, target: target)
+            alignShortcuts(in: menu, context: context)
             return menu
         }
 
         addCaptureSection(menu, context: context, target: target)
 
-        menu.addItem(submenuItem("Window", target: target) { sub in
+        menu.addItem(submenuItem("Window", target: target, context: context) { sub in
             addBindings(sub, context: context, target: target,
                         [.half(.left), .half(.right), .half(.top), .half(.bottom)])
             sub.addItem(.separator())
@@ -66,15 +65,16 @@ final class MenuBuilder {
             addBindings(sub, context: context, target: target, [.fullScreen, .center, .snapBack])
         })
 
-        menu.addItem(submenuItem("Display", target: target) { sub in
+        menu.addItem(submenuItem("Display", target: target, context: context) { sub in
             addBindings(sub, context: context, target: target, [.display(.next), .display(.previous)])
         })
 
-        menu.addItem(submenuItem("Spaces", target: target) { sub in
+        menu.addItem(submenuItem("Spaces", target: target, context: context) { sub in
             addBindings(sub, context: context, target: target, [.space(.next), .space(.previous)])
         })
 
         addStandardTail(menu, target: target)
+        alignShortcuts(in: menu, context: context)
 
         return menu
     }
@@ -108,18 +108,17 @@ final class MenuBuilder {
     // MARK: Capture section (top-level, highest-frequency)
 
     private func addCaptureSection(_ menu: NSMenu, context: Context, target: AnyObject) {
-        for action in [Action.captureScreenshot, .startRecording, .toggleScrollCapture] {
+        for action in [Action.captureScreenshot, .startRecording] {
             menu.addItem(makeRow(action, context: context, target: target))
         }
         menu.addItem(.separator())
     }
 
     private func addRecordingCollapse(_ menu: NSMenu, context: Context, target: AnyObject) {
-        let isScroll = context.sessionMode == .scrollCapturing
-        let row = makeRow(isScroll ? .toggleScrollCapture : .startRecording,
-                           context: context, target: target)
-        row.title = (isScroll ? "Stop Scroll Capture" : "Stop Recording")
-            + "  " + (isScroll ? "⌃⌘S" : "⌃⌘Z")
+        // Same action, relabelled: the record shortcut is a toggle, so there is
+        // no second binding to show here.
+        let row = makeRow(.startRecording, context: context, target: target,
+                          titleOverride: "Stop Recording")
         menu.addItem(row)
         menu.addItem(.separator())
     }
@@ -127,6 +126,10 @@ final class MenuBuilder {
     // MARK: Standard tail (unchanged except the SizeUp importer → Settings)
 
     private func addStandardTail(_ menu: NSMenu, target: AnyObject) {
+        // The app's own rows are not window actions; without this they read as
+        // the tail of the Spaces group.
+        menu.addItem(.separator())
+
         let settings = NSMenuItem(title: "Settings…",
                                   action: #selector(AppDelegate.showPreferences),
                                   keyEquivalent: ",")
@@ -163,10 +166,11 @@ final class MenuBuilder {
     /// shortcut)" when unbound, "(…reason…)" when another app claimed the keys,
     /// and "(unavailable on this macOS)" beside a Space item whose private API
     /// did not resolve.
-    private func makeRow(_ action: Action, context: Context, target: AnyObject) -> NSMenuItem {
+    private func makeRow(_ action: Action, context: Context, target: AnyObject,
+                         titleOverride: String? = nil) -> NSMenuItem {
         let binding = context.keymap.bindings.first { $0.action == action }
         let item = NSMenuItem(
-            title: DefaultKeymap.title(for: action),
+            title: titleOverride ?? DefaultKeymap.title(for: action),
             action: #selector(AppDelegate.menuAction(_:)),
             keyEquivalent: ""
         )
@@ -189,19 +193,71 @@ final class MenuBuilder {
         return item
     }
 
-    private func submenuItem(_ title: String, target: AnyObject,
+    // MARK: The shortcut column
+
+    /// Draw each row's shortcut, right-aligned, the way an ordinary menu does.
+    ///
+    /// Deliberately *not* `keyEquivalent`. These shortcuts are already registered
+    /// globally with Carbon, and a real key equivalent would also fire the row
+    /// whenever the menu happened to be open — two screenshots from one press, or
+    /// a recording started and stopped again. So the accelerator is drawn as text
+    /// and nothing is bound to it.
+    ///
+    /// One tab stop for the whole menu, computed from the widest row, so the
+    /// column lines up instead of ragging.
+    private func alignShortcuts(in menu: NSMenu, context: Context) {
+        let font = NSFont.menuFont(ofSize: 0)
+        func width(_ string: String) -> CGFloat {
+            (string as NSString).size(withAttributes: [.font: font]).width
+        }
+
+        var rows: [(item: NSMenuItem, accelerator: String)] = []
+        var widestTitle: CGFloat = 0
+        var widestAccelerator: CGFloat = 0
+        for item in menu.items {
+            guard let action = (item.representedObject as? ActionBox)?.action,
+                  let shortcut = context.keymap.bindings
+                      .first(where: { $0.action == action })?.shortcut
+            else { continue }
+            let accelerator = shortcut.displayString
+            widestTitle = max(widestTitle, width(item.title))
+            widestAccelerator = max(widestAccelerator, width(accelerator))
+            rows.append((item, accelerator))
+        }
+        guard !rows.isEmpty else { return }
+
+        // A right tab stop puts the accelerator's *right* edge at the stop, so it
+        // has to leave room for the longest one.
+        let gap: CGFloat = 24
+        let stop = widestTitle + gap + widestAccelerator
+        let style = NSMutableParagraphStyle()
+        style.tabStops = [NSTextTab(textAlignment: .right, location: stop)]
+
+        for (item, accelerator) in rows {
+            let text = NSMutableAttributedString(
+                string: item.title,
+                attributes: [.font: font, .paragraphStyle: style])
+            text.append(NSAttributedString(
+                string: "\t" + accelerator,
+                attributes: [.font: font, .paragraphStyle: style,
+                             .foregroundColor: NSColor.secondaryLabelColor]))
+            item.attributedTitle = text
+        }
+    }
+
+    private func submenuItem(_ title: String, target: AnyObject, context: Context,
                              _ build: (NSMenu) -> Void) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         let sub = NSMenu(title: title)
         sub.autoenablesItems = false
         build(sub)
+        // Each submenu gets its own column: aligning them together would leave
+        // the short ones with a huge gap.
+        alignShortcuts(in: sub, context: context)
         item.submenu = sub
         return item
     }
 
-    private func isRecordingMode(_ mode: CaptureMode) -> Bool {
-        mode == .recording || mode == .scrollCapturing
-    }
 }
 
 /// Carries an `Action` to a menu row. `representedObject` needs a reference

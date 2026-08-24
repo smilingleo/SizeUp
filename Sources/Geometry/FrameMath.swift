@@ -125,7 +125,7 @@ private func placement(
     // Capture actions are not frame math. They appear here only because the
     // switch is exhaustive; App routes them to the capture session and never
     // calls `targetFrame` with one.
-    case .captureScreenshot, .startRecording, .toggleScrollCapture:
+    case .captureScreenshot, .startRecording:
         return nil
     }
 }

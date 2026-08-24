@@ -76,12 +76,17 @@ indistinguishable.
 
 ## 3. Menu
 
-- [ ] **Capture section** is top-level: Screenshot ⌃⌘A, Record Screen ⌃⌘Z,
-      Scroll Capture ⌃⌘S.
+- [ ] **Capture section** is top-level: Screenshot ⌃⌘A, Record Screen ⌃⌘Z.
 - [ ] **Three submenus**: `Window ▸` (halves / corners / full screen, center,
       snap back), `Display ▸` (next / previous), `Spaces ▸` (next / previous).
       Every one of the 15 window actions is reachable in two clicks.
-- [ ] Each row still shows its shortcut, and the honest suffixes survive the
+- [ ] Every row shows its shortcut in a right-aligned column, lined up within
+      each menu. Check the shortcut shown is the one *in force*: rebind something
+      in Settings and confirm the menu follows.
+- [ ] With the menu open, press a capture shortcut. It must fire **once** — the
+      column is drawn, not bound as a key equivalent, so nothing should happen
+      twice.
+- [ ] The honest suffixes survive the
       move into submenus: `(no shortcut)` when unbound, `(…reason…)` when
       another app claimed the keys, `(unavailable on this macOS)` beside a Space
       item whose private API is absent.
@@ -137,16 +142,6 @@ entry (`tccutil reset ScreenCapture com.lliu.sizeup2`) and relaunching:
 - [ ] Multi-display tiling, Size cycling (½/⅓ repeat), gaps, the skip list, and
       Spaces all behave exactly as M5 left them. **Nothing** about window
       management changed in C1 — if any of these feels different, it is a bug.
-
----
-
-## Recording and scroll capture: listed, not yet built
-
-- [ ] **⌃⌘Z (Record Screen)** and **⌃⌘S (Scroll Capture)** are registered and
-      listed, but selecting them (hotkey or menu) shows the one-time
-      **"Coming in a later build"** alert and changes nothing. This is the
-      honest-absence behavior — the key stays bound, the feature does not pretend
-      to exist. (They become live in C3 and C5.)
 
 ---
 
@@ -323,3 +318,9 @@ Export, then open the saved file outside ClipShot. The annotations must be *in*
 it. This regressed once: the save dialog moved the raw recording onto the chosen
 path and the encode then failed, so the file looked right and had nothing drawn
 on it. Check the recording is not also left behind in the temporary folder.
+
+## 32. Nothing refers to scroll capture any more
+The feature was removed rather than left as an apology. There should be no row
+for it, no shortcut registered on ⌃⌘S, and no entry in the Shortcuts tab. If you
+had bound it before, your other shortcuts must be unaffected — the stale entry in
+`settings.json` is ignored, not treated as corruption.

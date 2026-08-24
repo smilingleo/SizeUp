@@ -63,6 +63,11 @@ public struct Resolution: Equatable, Sendable {
     /// were unbound. Empty for anything the recorder produced.
     public let conflicts: [Shortcut: [Action]]
 
+    public init(bindings: [ResolvedBinding], conflicts: [Shortcut: [Action]]) {
+        self.bindings = bindings
+        self.conflicts = conflicts
+    }
+
     public func shortcut(for action: Action) -> Shortcut? {
         bindings.first { $0.action == action }?.shortcut
     }

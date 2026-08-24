@@ -34,7 +34,6 @@ public enum ClipShotImporter {
     private static let keyToAction: [(key: String, action: String)] = [
         ("capture_hotkey", "capture.screenshot"),
         ("record_hotkey", "capture.record"),
-        ("scroll_capture_hotkey", "capture.scrollCapture"),
     ]
 
     /// `~/.config/clipshot/config.ini` — the same path the Rust app reads

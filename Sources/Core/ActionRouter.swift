@@ -109,7 +109,7 @@ public struct ActionRouter {
         // so this arm is unreachable in practice; it exists only to keep the
         // switch exhaustive without a `default:` that would swallow them. It
         // must stay a no-op: a capture action must never touch a window frame.
-        case .captureScreenshot, .startRecording, .toggleScrollCapture:
+        case .captureScreenshot, .startRecording:
             return
         }
     }
