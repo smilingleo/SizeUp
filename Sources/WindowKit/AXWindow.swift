@@ -36,52 +36,52 @@ public final class AXWindow: WindowHandle {
     /// fixes that. The achieved frame is read back and returned, because
     /// applications with minimum sizes will not honour the request exactly.
     @discardableResult
-    public func setFrame(_ cocoaRect: CGRect) -> CGRect? {
+    public func setFrame(_ requested: CGRect) -> CGRect? {
         // Refuse rather than corrupt: see CGRect.isSafeToApply.
-        guard cocoaRect.isSafeToApply else { return nil }
-        let before = frame()
-        let target = axRect(fromCocoa: cocoaRect, primaryFrame: primaryFrame)
-        writePoint(kAXPositionAttribute, target.origin)
-        writeSize(kAXSizeAttribute, target.size)
-        writePoint(kAXPositionAttribute, target.origin)
-        let achieved = frame()
-        report(before: before, request: cocoaRect, achieved: achieved)
-        return achieved
+        guard requested.isSafeToApply else { return nil }
+        let before = axFrame()
+        let target = axRect(fromCocoa: requested, primaryFrame: primaryFrame)
+
+        // Applied and verified in Accessibility space, then converted once for
+        // the caller. Comparing in Cocoa space would be wrong: a window that
+        // refuses to change height reads back at a different Cocoa y for that
+        // reason alone, so the check would call a pure size failure a position
+        // failure too, and the numbers in the log would not be subtractable.
+        let applier = FrameApplier(
+            read: { [weak self] in self?.axFrame() },
+            writePosition: { [weak self] in self?.writePoint(kAXPositionAttribute, $0) },
+            writeSize: { [weak self] in self?.writeSize(kAXSizeAttribute, $0) }
+        )
+        let (achieved, attempts) = applier.apply(target)
+
+        report(before: before, request: target, achieved: achieved, attempts: attempts)
+        guard let achieved else { return nil }
+        return cocoaRect(fromAX: achieved, primaryFrame: primaryFrame)
     }
 
-    /// Log the whole transition: what Accessibility said the window was, what it
-    /// was asked for, and what it became.
-    ///
-    /// The first version logged only disagreements, which was the wrong choice
-    /// and would have hidden the bug it was written for. A window given the
-    /// *wrong screen's* frame accepts it perfectly — asked equals got, nothing
-    /// to disagree about — and the only trace is that "before" was on one
-    /// display and "asked" on another. Two of the three numbers were the
-    /// interesting ones and they were the two not being logged.
-    ///
-    /// One line per window move, which is one line per deliberate keypress, so
-    /// the volume is the user's own doing. The disagreement is still called out
-    /// separately, at `problem` level, because "the application refused" is a
-    /// different answer from "we asked for the wrong thing".
-    private func report(before: CGRect?, request: CGRect, achieved: CGRect?) {
+    /// The frame in Accessibility space, which is where the writes happen and so
+    /// where they have to be checked.
+    private func axFrame() -> CGRect? {
+        guard let position = copyValue(kAXPositionAttribute, as: .cgPoint, CGPoint.self),
+              let size = copyValue(kAXSizeAttribute, as: .cgSize, CGSize.self)
+        else { return nil }
+        return CGRect(origin: position, size: size)
+    }
+
+    private func report(before: CGRect?, request: CGRect, achieved: CGRect?, attempts: Int) {
         let who = bundleIdentifier ?? "pid \(pid)"
         guard let achieved else {
             Log.problem("\(who) window frame unreadable after setFrame")
             return
         }
+        let tries = attempts > 1 ? " after \(attempts) attempts" : ""
         Log.note("\(who) window was \(Self.text(before)) asked \(Self.text(request))"
-            + " now \(Self.text(achieved))")
+            + " now \(Self.text(achieved))\(tries) [Accessibility space]")
 
-        // A point of tolerance rather than exact equality: Accessibility
-        // positions are integral and a tiled frame need not be, so an honest
-        // application still lands a fraction of a point away.
-        let off = max(
-            abs(achieved.minX - request.minX), abs(achieved.minY - request.minY),
-            abs(achieved.width - request.width), abs(achieved.height - request.height)
-        )
+        let off = FrameApplier.offset(of: achieved, from: request)
         guard off > 1 else { return }
         Log.problem("\(who) did not take the frame it was given,"
-            + " off by \(Int(off.rounded()))pt")
+            + " off by \(Int(off.rounded()))pt after \(attempts) attempts")
     }
 
     private static func text(_ rect: CGRect?) -> String {
