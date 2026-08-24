@@ -57,10 +57,16 @@ FORBIDDEN_IMPORTS = {
     # target.
     "Capture": {"AppKit", "Carbon", "ApplicationServices", "Geometry", "Config",
                 "Core", "Hotkeys", "SpaceKit", "WindowKit", "Annotation",
-                "OverlayUI"},
+                "OverlayUI", "VideoEdit"},
     "Annotation": {"AppKit", "Carbon", "ApplicationServices", "Geometry", "Config",
                    "Core", "Hotkeys", "SpaceKit", "WindowKit", "Capture",
-                   "OverlayUI"},
+                   "OverlayUI", "VideoEdit"},
+    # The recording editor. Allowed both `Annotation` and `Capture` -- it is the
+    # first target that needs the renderer and the codec at once, and keeping
+    # video export here is what stops `App` from growing it. Still AppKit-free,
+    # so the timeline and frame math stay testable without a screen.
+    "VideoEdit": {"AppKit", "Carbon", "ApplicationServices", "Geometry", "Config",
+                  "Core", "Hotkeys", "SpaceKit", "WindowKit", "OverlayUI"},
     # The one AppKit layer. It may import AppKit and the two targets it sits on;
     # nothing else (no Carbon, no the window-manager modules).
     "OverlayUI": {"Carbon", "ApplicationServices", "Geometry", "Config", "Core",

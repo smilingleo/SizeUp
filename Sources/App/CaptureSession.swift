@@ -2,6 +2,7 @@ import Annotation
 import AppKit
 import Capture
 import Config
+import VideoEdit
 import Core
 import Geometry
 import OverlayUI
@@ -186,6 +187,8 @@ final class CaptureSession: OverlayViewDelegate {
     private var recorder: ScreenRecorder?
     private var recordingTimer: Timer?
     private var borderWindow: RecordingBorderWindow?
+    /// The post-recording editor, while it is open.
+    private var editorWindow: RecordingEditorWindow?
 
     private func presentOverlay(on screen: NSScreen) {
         guard let captured else { return }
@@ -412,16 +415,64 @@ final class CaptureSession: OverlayViewDelegate {
         guard let recorder else { return }
         self.recorder = nil
         do {
-            guard let url = try recorder.finish() else {
+            guard let url = try await recorder.finish() else {
                 NSLog("ClipShot: the recording captured no frames")
                 return
             }
             NSLog("ClipShot: recorded \(recorder.framesWritten) frames")
-            presentRecordingSave(url)
+            await openEditor(for: url)
         } catch {
             NSLog("ClipShot: could not finish the recording: \(error)")
         }
     }
+
+    /// Open the finished recording in the editor.
+    ///
+    /// The editor rather than a bare save dialog, because the recording is a
+    /// draft: the useful edits (trim to the interesting part, label what to look
+    /// at, hold on a result) are the reason to record at all. If the video cannot
+    /// be opened, fall back to the save dialog rather than losing it.
+    private func openEditor(for url: URL) async {
+        guard editorWindow == nil else {
+            NSLog("ClipShot: an editor is already open")
+            return
+        }
+        do {
+            let decoder = try await VideoDecoder(url: url)
+            guard decoder.totalFrames > 0 else {
+                NSLog("ClipShot: the recording has no frames to edit")
+                presentRecordingSave(url)
+                return
+            }
+            let edit = RecordingEdit(videoURL: url, totalFrames: decoder.totalFrames,
+                                     fps: decoder.fps)
+            let window = makeEditorWindow(edit, decoder)
+            window.editorDelegate = self
+            editorWindow = window
+            // The editor is a real window with keyboard focus, unlike the capture
+            // overlay, so the app has to come forward for it to be usable.
+            activateForPanel()
+            window.present()
+        } catch {
+            NSLog("ClipShot: could not open the recording for editing: \(error)")
+            presentRecordingSave(url)
+        }
+    }
+
+    /// Seam: builds the editor window, so tests can substitute one.
+    var makeEditorWindow: (RecordingEdit, VideoDecoder) -> RecordingEditorWindow = {
+        RecordingEditorWindow(edit: $0, decoder: $1)
+    }
+
+    /// Take the editor down and clean up the temporary recording.
+    private func closeEditor(discardingSource url: URL?) {
+        editorWindow?.dismiss()
+        editorWindow = nil
+        if let url { try? FileManager.default.removeItem(at: url) }
+    }
+
+    /// True while the editor is open. Read by tests.
+    var hasEditorForTesting: Bool { editorWindow != nil }
 
     /// Move the finished video out of the temporary directory.
     ///
@@ -517,6 +568,89 @@ final class CaptureSession: OverlayViewDelegate {
 }
 
 // MARK: - ToolbarDelegate
+
+// MARK: - The recording editor
+
+extension CaptureSession: RecordingEditorDelegate {
+    public func recordingEditor(_ window: RecordingEditorWindow,
+                                didRequestExport edit: RecordingEdit,
+                                annotationScale: CGSize) {
+        // Ask where to put it *before* spending time encoding: cancelling after a
+        // long export would throw the work away.
+        guard let destination = presentVideoSavePanel(edit.videoURL) else { return }
+
+        let source = edit.videoURL
+        let progress = ExportProgressWindow()
+        progress.present()
+
+        // The exporter's callback is `@Sendable` and runs off the main actor,
+        // while the window must be touched on it. A stream is the channel between
+        // them: the continuation is Sendable, so the callback can yield into it
+        // without capturing the window at all.
+        let (fractions, sink) = AsyncStream<Double>.makeStream()
+        let display = Task { @MainActor in
+            for await fraction in fractions { progress.update(fraction) }
+        }
+
+        Task { @MainActor in
+            defer {
+                sink.finish()
+                display.cancel()
+                progress.dismiss()
+            }
+            do {
+                try await VideoExporter.export(
+                    edit, to: destination, annotationScale: annotationScale,
+                    onProgress: { fraction in
+                        sink.yield(fraction)
+                        return true
+                    })
+                NSLog("ClipShot: exported to \(destination.path)")
+                self.closeEditor(discardingSource: source)
+                self.machine.resetToIdle()
+                self.fireModeChange()
+            } catch {
+                NSLog("ClipShot: the export failed: \(error)")
+                self.showExportFailed(error)
+            }
+        }
+    }
+
+    public func recordingEditorDidCancel(_ window: RecordingEditorWindow) {
+        let edit = window.currentEdit
+        // Only ask if there is something to lose. A confirmation on an untouched
+        // recording is just an extra click between the user and the file.
+        if edit.hasEdits, !confirmDiscard() { return }
+
+        // The recording itself is still worth keeping even if the edits are not,
+        // so offer to save the original rather than deleting it silently.
+        let source = edit.videoURL
+        closeEditor(discardingSource: nil)
+        presentRecordingSave(source)
+        machine.resetToIdle()
+        fireModeChange()
+    }
+
+    /// Seam: the discard confirmation.
+    func confirmDiscard() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Discard your edits?"
+        alert.informativeText =
+            "The annotations, freezes and speed changes will be lost. "
+            + "You can still save the original recording."
+        alert.addButton(withTitle: "Discard")
+        alert.addButton(withTitle: "Keep Editing")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func showExportFailed(_ error: any Error) {
+        let alert = NSAlert()
+        alert.messageText = "The export failed"
+        alert.informativeText = "\(error)"
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+}
 
 extension CaptureSession: ToolbarDelegate {
     public func toolbar(_ toolbar: ToolbarWindow, didSelect tool: Tool) {

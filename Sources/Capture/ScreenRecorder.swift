@@ -113,9 +113,13 @@ public final class ScreenRecorder {
     }
 
     /// Stop and close the file.
+    ///
+    /// Async because closing an `AVAssetWriter` means waiting for it to flush,
+    /// and doing that with a blocking wait on the main actor freezes the UI for
+    /// as long as the flush takes.
     /// - Returns: the finished video, or `nil` if nothing was written.
     @discardableResult
-    public func finish() throws -> URL? {
+    public func finish() async throws -> URL? {
         guard let encoder else { return nil }
         // Pad out to the moment the user pressed stop, so the tail of the
         // recording is not trimmed by up to a frame interval.
@@ -130,7 +134,7 @@ public final class ScreenRecorder {
             encoder.cancel()
             return nil
         }
-        try encoder.finish()
+        try await encoder.finish()
         return encoder.url
     }
 

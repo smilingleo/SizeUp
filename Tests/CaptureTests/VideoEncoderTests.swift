@@ -32,7 +32,7 @@ private func frame(_ width: Int, _ height: Int, red: Double) -> CGImage {
     for i in 0..<30 {
         #expect(encoder.append(frame(160, 120, red: Double(i) / 30)))
     }
-    try encoder.finish()
+    try await encoder.finish()
 
     #expect(FileManager.default.fileExists(atPath: url.path))
 
@@ -59,7 +59,7 @@ private func frame(_ width: Int, _ height: Int, red: Double) -> CGImage {
     let encoder = try VideoEncoder(url: url, width: 64, height: 64)
     try encoder.start()
     for _ in 0..<Recording.fps * 2 { _ = encoder.append(frame(64, 64, red: 0.5)) }
-    try encoder.finish()
+    try await encoder.finish()
 
     let duration = try await AVURLAsset(url: url).load(.duration)
     #expect(abs(duration.seconds - 2.0) < 0.15, "duration was \(duration.seconds)s")
@@ -105,7 +105,7 @@ private func frame(_ width: Int, _ height: Int, red: Double) -> CGImage {
     let encoder = try VideoEncoder(url: url, width: 100, height: 100)
     try encoder.start()
     #expect(encoder.append(frame(80, 60, red: 0.9)))
-    try encoder.finish()
+    try await encoder.finish()
 
     let size = try await AVURLAsset(url: url).loadTracks(withMediaType: .video)[0]
         .load(.naturalSize)
@@ -116,4 +116,36 @@ private func frame(_ width: Int, _ height: Int, red: Double) -> CGImage {
     // H.264 needs even dimensions. `even` is where that is enforced.
     #expect(Screenshot.even(101) == 100)
     #expect(Screenshot.even(1) == 0)
+}
+
+@Test func manyEncodersCanFinishAtTheSameTime() async throws {
+    // Regression: `finish()` used to wait on a DispatchGroup. That blocks the
+    // calling thread until AVFoundation's completion handler runs -- but the
+    // handler needs a thread of its own, so several encoders finishing at once
+    // exhausted the cooperative pool and the whole process deadlocked. It also
+    // froze the UI for the length of the flush, because a recording stops on the
+    // main actor. Awaiting a continuation instead frees the thread.
+    //
+    // Ten concurrent finishes is well past the pool width on any machine this
+    // runs on, so a blocking implementation hangs here rather than merely
+    // slowing down.
+    try await withThrowingTaskGroup(of: URL.self) { group in
+        for _ in 0..<10 {
+            group.addTask {
+                let url = tempURL()
+                let encoder = try VideoEncoder(url: url, width: 64, height: 64)
+                try encoder.start()
+                for _ in 0..<10 { _ = encoder.append(frame(64, 64, red: 0.4)) }
+                try await encoder.finish()
+                return url
+            }
+        }
+        var written = 0
+        for try await url in group {
+            #expect(FileManager.default.fileExists(atPath: url.path))
+            try? FileManager.default.removeItem(at: url)
+            written += 1
+        }
+        #expect(written == 10)
+    }
 }

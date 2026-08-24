@@ -259,3 +259,53 @@ to idle, and a following ⌃⌘A must still work rather than being refused as
 ## 21. Exclusions still hold
 While recording, ⌃⌘A must be refused (no screenshot mid-recording). The Window
 menu collapses to the recording controls.
+
+---
+
+# C4: the recording editor
+
+## 22. It opens
+Stop a recording. The editor window should appear with the first frame showing,
+the tool palette above it, and a timeline underneath. Press Space: it should
+play at roughly real speed and stop at the end.
+
+## 23. Annotations are anchored to moments
+Scrub to a recognisable moment, draw an arrow, then scrub away. The arrow must
+disappear about a second later and reappear when you scrub back. Its bar in the
+timeline must sit under the part of the scrubber where it is visible.
+
+## 24. Retiming
+Select the arrow and drag the right end of its bar to the end of the video. It
+should now stay on screen for the rest of the playback. Drag the left end past
+the right end — it must refuse rather than vanish.
+
+## 25. Freeze
+Scrub to a moment and press `F`. The video should get two seconds longer, the
+timeline should show a shaded band, and playing through it should hold that one
+frame and then continue from where it left off — not jump or restart. Any
+annotation *after* the freeze must still be over the same picture as before.
+
+## 26. Speed
+Set 2×. The total time should halve, playback should be visibly faster, and an
+annotation you placed on a moment must still be on that moment. Set it back to
+1× — timings should return to where they were.
+
+## 27. Pulse
+Select a shape and press `U`. It should breathe and glow yellow at about 2–3
+times a second, smoothly rather than snapping. Its bar in the timeline gets a
+yellow cap.
+
+## 28. Text and CJK
+Pick the text tool, click, and type — including with an input method. The same
+as the screenshot editor: Return commits, ⇧Return inserts a newline.
+
+## 29. Export matches the canvas
+Export with several annotations, a freeze and a non-1× speed. Play the exported
+file: every annotation must appear at the same moment, in the same place and at
+the same size as in the editor, the freeze must be there, and the length must
+match what the editor showed. A progress window should appear during the encode.
+
+## 30. Nothing is lost
+Close the editor with edits pending: it must ask, and then still offer to save
+the original recording. Cancel that save and the recording is gone — which is
+the point of asking twice.

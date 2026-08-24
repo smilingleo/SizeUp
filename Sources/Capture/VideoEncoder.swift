@@ -13,7 +13,15 @@ import Foundation
 ///
 /// Errors are values rather than traps — running out of disk half way through a
 /// recording should stop the recording, not the app.
-public final class VideoEncoder {
+///
+/// `@unchecked Sendable` because an encoder is owned by exactly one thing at a
+/// time — the recorder, on the main actor, or an export task — and every call is
+/// made from that owner in order. The compiler cannot see that, but it has to be
+/// expressible, because `finish()` suspends and the owner keeps using the encoder
+/// afterwards. The underlying `AVAssetWriter` is itself safe across threads; what
+/// is not safe, and what this promises not to do, is drive one encoder from two
+/// places at once.
+public final class VideoEncoder: @unchecked Sendable {
     public enum Failure: Error, CustomStringConvertible {
         case writerUnavailable
         case cannotAddInput
@@ -155,16 +163,27 @@ public final class VideoEncoder {
         return true
     }
 
-    /// Close the file. Blocking, because the caller is about to hand the URL to
-    /// a save dialog and a half-written MP4 is not playable.
-    public func finish() throws {
+    /// Close the file, waiting for the writer to flush.
+    ///
+    /// Async, not blocking. The first version waited on a `DispatchGroup`, which
+    /// deadlocks: `finishWriting` needs a thread to call back on, and blocking
+    /// the caller's thread while several encoders finish at once exhausts the
+    /// cooperative pool so none of the callbacks can run. It also froze the UI
+    /// for the length of the flush, since the recording stops on the main actor.
+    public func finish() async throws {
         guard started else { return }
         input.markAsFinished()
-        let group = DispatchGroup()
-        group.enter()
-        writer.finishWriting { group.leave() }
-        group.wait()
         started = false
+        // The writer, not `self`, crosses the suspension: the encoder is owned by
+        // a main-actor object and is not Sendable, so awaiting on a method that
+        // touched it afterwards would be sending main-actor state off the actor.
+        // `AVAssetWriter.finishWriting` is documented as safe to call from any
+        // thread, which is what makes the annotation honest rather than a
+        // silencer.
+        nonisolated(unsafe) let writer = self.writer
+        await withCheckedContinuation { continuation in
+            writer.finishWriting { continuation.resume() }
+        }
         if writer.status == .failed {
             throw Failure.finishFailed(writer.error?.localizedDescription ?? "unknown")
         }

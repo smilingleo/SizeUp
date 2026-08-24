@@ -3,6 +3,7 @@ import AppKit
 import Capture
 import Core
 import OverlayUI
+import VideoEdit
 import Testing
 @testable import App
 
@@ -227,4 +228,75 @@ private func sessionReadyToSave() -> (CaptureSession, OverlayView) {
     #expect(machine.mode == .idle, "the session must be reusable afterwards")
     // And a screenshot works again once it is over.
     #expect(machine.handle(.screenshotRequested) == .beginCapture)
+}
+
+// MARK: The recording editor's wiring
+
+/// A tiny real MP4, so a real `VideoDecoder` and editor window can be built.
+private func makeTinyVideo(frames: Int = 30) async throws -> URL {
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clipshot-app-\(UUID().uuidString).mp4")
+    let encoder = try VideoEncoder(url: url, width: 64, height: 64)
+    try encoder.start()
+    let context = CGContext(data: nil, width: 64, height: 64, bitsPerComponent: 8,
+                            bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    context.setFillColor(CGColor(srgbRed: 0.2, green: 0.3, blue: 0.4, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+    let image = context.makeImage()!
+    for _ in 0..<frames { _ = encoder.append(image) }
+    try await encoder.finish()
+    return url
+}
+
+@MainActor
+@Test func exportingAsksWhereToPutItBeforeEncoding() async throws {
+    // The dialog has to come first: encoding a long recording takes real time,
+    // and cancelling the save afterwards would throw all of it away.
+    let source = try await makeTinyVideo()
+    defer { try? FileManager.default.removeItem(at: source) }
+
+    let decoder = try await VideoDecoder(url: source)
+    let edit = RecordingEdit(videoURL: source, totalFrames: decoder.totalFrames,
+                             fps: decoder.fps)
+    let window = RecordingEditorWindow(edit: edit, decoder: decoder)
+
+    let session = CaptureSession(capabilities: [.screenshot, .recording])
+    let asked = Box()
+    session.presentVideoSavePanel = { _ in asked.set(); return nil }
+
+    session.recordingEditor(window, didRequestExport: edit,
+                            annotationScale: CGSize(width: 64, height: 64))
+    #expect(asked.value, "the save dialog was not offered")
+}
+
+@MainActor
+@Test func cancellingTheEditorStillOffersToSaveTheRecording() async throws {
+    // The edits may not be worth keeping, but the recording is: deleting it
+    // silently would throw away the only copy.
+    let source = try await makeTinyVideo()
+    defer { try? FileManager.default.removeItem(at: source) }
+
+    let decoder = try await VideoDecoder(url: source)
+    let edit = RecordingEdit(videoURL: source, totalFrames: decoder.totalFrames,
+                             fps: decoder.fps)
+    let window = RecordingEditorWindow(edit: edit, decoder: decoder)
+
+    let session = CaptureSession(capabilities: [.screenshot, .recording])
+    let offered = Box()
+    session.presentVideoSavePanel = { url in
+        #expect(url == source, "it offered to save something other than the recording")
+        offered.set()
+        return nil
+    }
+
+    // No edits, so no confirmation is expected.
+    session.recordingEditorDidCancel(window)
+    #expect(offered.value)
+}
+
+/// A one-shot flag, since the seams are non-escaping closures over a `let`.
+private final class Box {
+    private(set) var value = false
+    func set() { value = true }
 }

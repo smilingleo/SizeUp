@@ -353,6 +353,27 @@ public struct Editor {
         annotations.append(annotation)
     }
 
+    /// Append without recording an undo step.
+    ///
+    /// For loading an existing list into the editor — as the recording editor
+    /// does every time the playhead moves. Checkpointing there would make undo
+    /// walk back through frames the user never edited.
+    public mutating func appendWithoutCheckpoint(_ annotation: Annotation) {
+        annotations.append(annotation)
+    }
+
+    /// Select by index, or clear if it is out of range.
+    ///
+    /// Needed to restore a selection after reloading the list, so the canvas and
+    /// the document agree about what is selected.
+    public mutating func selectAnnotation(at index: Int?) {
+        guard let index, annotations.indices.contains(index) else {
+            selected = nil
+            return
+        }
+        selected = index
+    }
+
     public mutating func clearSelection() {
         selected = nil
         endTextEditing()

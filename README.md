@@ -174,9 +174,7 @@ action) copies it to the clipboard, **Save** writes a PNG, and **Esc** cancels.
 | ⌃⌘S | Scroll Capture |
 
 **Scroll capture** is listed in the menu and bound to a shortcut but is not yet
-built; selecting it says so rather than doing nothing silently. The recording
-editor (trim and export) lands in a later build too — a finished recording goes
-straight to a save dialog for now.
+built; selecting it says so rather than doing nothing silently.
 
 ### Recording
 
@@ -197,6 +195,28 @@ Settings → General:
 Frames are paced against the wall clock: if a capture is slow the previous frame
 is repeated rather than dropped, because a missing frame would shorten the video
 and silently speed it up.
+
+### The recording editor
+
+Stopping a recording opens it in an editor rather than a save dialog, because a
+raw recording is a draft: the useful work is labelling what to look at and
+holding on the result.
+
+| | |
+|---|---|
+| **Play** | Space, or the play button. ←/→ step a frame, ⇧←/⇧→ ten. |
+| **Annotate** | The same eleven tools as the screenshot editor, same shortcuts. Each shape is visible for a span of frames, not the whole video. |
+| **Retime** | Select a shape and drag either end of its bar in the timeline. |
+| **Pulse** | `U` — the shape breathes and glows, to draw the eye without narration. |
+| **Freeze** | `F` — holds the current frame for two seconds. The timeline grows and later annotations shift with it, so they stay on the moments they were placed on. |
+| **Speed** | 0.5×–2×. Annotation timings are rescaled with it. |
+| **Export** | ⌘S or Return. Writes a new H.264 file with the annotations burned in. |
+
+Escape backs out: first the selection, then the editor. Closing with unsaved
+edits asks first, and still offers to save the untouched recording.
+
+Not ported from the Rust original: the zoom/pan keyframe feature, which is a
+second timeline concept layered on freezes.
 
 ## Installing
 
