@@ -2,9 +2,9 @@
 
 A menu-bar app for macOS that does two jobs: it **manages windows** (the former
 Sizeup2 — halves, quarters, full screen, center, multi-display, Spaces, snap
-back) and it **captures the screen** (region screenshots, and — landing in
-later builds — screen recording and scroll capture). Both run on global
-keyboard shortcuts.
+back) and it **captures the screen** (region screenshots with an annotation editor,
+screen recording, and — landing in a later build — scroll capture). Both run on
+global keyboard shortcuts.
 
 It was built from Sizeup2, the Swift replacement for the unmaintained SizeUp,
 with the ClipShot capture suite merged in and rewritten in Swift. The name
@@ -173,10 +173,30 @@ action) copies it to the clipboard, **Save** writes a PNG, and **Esc** cancels.
 | ⌃⌘Z | Record Screen |
 | ⌃⌘S | Scroll Capture |
 
-**Recording** and **scroll capture** are listed in the menu and bound to
-shortcuts but are not yet built; selecting them says so rather than doing
-nothing silently. Annotation tools, the recording editor, and scroll stitching
-land in the builds after this one.
+**Scroll capture** is listed in the menu and bound to a shortcut but is not yet
+built; selecting it says so rather than doing nothing silently. The recording
+editor (trim and export) lands in a later build too — a finished recording goes
+straight to a save dialog for now.
+
+### Recording
+
+⌃⌘Z opens the same region picker the screenshot uses; confirming it starts the
+recording, and ⌃⌘Z again stops it. The menu collapses to **Stop Recording**
+while one is running, and a red frame marks the region being recorded. The
+frame is click-through, so you keep working inside it, and it is excluded from
+the video rather than recorded as part of it.
+
+Output is H.264 in an MP4 at 30fps. Two things are drawn in if enabled under
+Settings → General:
+
+| Setting | Effect |
+|---|---|
+| Show cursor in recordings | ScreenCaptureKit draws the real cursor |
+| Show click ripples | An expanding blue ring at each click, so a demo reads without narration |
+
+Frames are paced against the wall clock: if a capture is slow the previous frame
+is repeated rather than dropped, because a missing frame would shorten the video
+and silently speed it up.
 
 ## Installing
 

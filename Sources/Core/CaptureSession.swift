@@ -37,8 +37,10 @@ public enum CaptureEvent: Equatable, Sendable {
 public enum CaptureEffect: Equatable, Sendable {
     /// Show the region-selection overlay (screenshot mode).
     case beginCapture
-    /// Show the overlay in record mode; recording starts on confirm. (C3)
+    /// Show the overlay in record mode; recording starts on confirm.
     case beginRecording
+    /// The region is chosen — start rolling frames.
+    case startRecordingSession
     /// Show the overlay in scroll-capture mode. (C5)
     case beginScrollCapture
     /// Hide the overlay and copy the crop to the clipboard. (C1)
@@ -163,11 +165,24 @@ public struct CaptureStateMachine: Equatable, Sendable {
             switch event {
             case .recordingStopped:
                 return (.idle, .stopRecording)
+            // Recording mode is entered when the *region picker* opens, not when
+            // frames start: confirming the region is what begins the capture.
+            case .overlayConfirmed:
+                return (.recording, .startRecordingSession)
+            // Backing out of the region picker abandons the whole recording.
+            // Once frames are rolling there is no overlay left to cancel, so
+            // this can only mean the picker.
+            case .overlayCancelled:
+                return (.idle, .dismiss)
             // No screenshot while recording.
             case .screenshotRequested:
                 return (.recording, .refused)
-            case .recordRequested, .scrollRequested,
-                 .overlayConfirmed, .overlayCancelled, .editorOpened, .editorClosed:
+            // The record action is a toggle: the menu collapses to "Stop
+            // Recording" and routes to this same action, and the hotkey should
+            // not need a different chord to stop than it did to start.
+            case .recordRequested:
+                return (.idle, .stopRecording)
+            case .scrollRequested, .editorOpened, .editorClosed:
                 return (.recording, .none)
             }
 

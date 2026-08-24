@@ -224,3 +224,38 @@ drawn *over* a blurred area is not itself mosaicked.
 Draw, move, resize, delete. ⌘Z should walk back through all four kinds of
 change, not just remove the last shape drawn. ⇧⌘Z redoes; drawing something new
 after an undo must drop the redo stack.
+
+---
+
+# C3: screen recording
+
+## 16. The round trip
+⌃⌘Z, drag a region, press Return. A red frame should appear around the region
+and the menu-bar icon should change. Work inside the frame for a few seconds,
+then press ⌃⌘Z again. A save dialog should offer
+`clipshot-recording-<timestamp>.mp4`; save it and play it back.
+
+## 17. Length matches reality
+Record for a measured ten seconds. The video must be ten seconds long, not
+noticeably shorter. A short video means frames were dropped rather than
+repeated, which speeds playback up — the failure this is most likely to have.
+
+## 18. The frame is not in the video
+The red border must not appear anywhere in the recording, and it must be
+click-through: you should be able to click something underneath its edge.
+
+## 19. Cursor and clicks
+With both toggles on under Settings → General, the recording should show the
+real cursor and a blue ripple at each click. Hold the mouse button down for a
+second: that must produce *one* ripple, not thirty. Turn each toggle off and
+confirm the corresponding effect disappears from the next recording.
+
+## 20. Nothing is left behind
+Cancel the save dialog. The temporary MP4 must not be left in the temporary
+directory. Also cancel the region picker with Escape — the session must return
+to idle, and a following ⌃⌘A must still work rather than being refused as
+"already in flight".
+
+## 21. Exclusions still hold
+While recording, ⌃⌘A must be refused (no screenshot mid-recording). The Window
+menu collapses to the recording controls.

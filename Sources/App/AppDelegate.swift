@@ -22,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Owns the capture side of the merge: the state machine, the overlay, and
     /// the clipboard/save. C1 wires the screenshot flow; the menu and status
     /// icon derive from `session.mode`.
-    private let session = CaptureSession()
+    private let session = CaptureSession(capabilities: [.screenshot, .recording])
     /// Constructed lazily (see `showPreferences`) so it captures
     /// `rebuildRouter` only once the router's dependencies are ready, and
     /// reused thereafter so a second click reuses the same window.
@@ -59,6 +59,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         session.modeDidChange = { [weak self] _ in
             self?.updateStatusIcon()
             self?.rebuildMenu()
+        }
+        // The recorder reads the cursor and click-ripple toggles at the moment a
+        // recording starts, so changing them takes effect on the next recording
+        // without any wiring to invalidate.
+        session.captureSettings = { [weak self] in
+            self?.settings.settings.capture ?? Config.CaptureSettings()
         }
 
         if AccessibilityPermission.isGranted {

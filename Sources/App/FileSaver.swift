@@ -42,6 +42,38 @@ public enum FileSaver {
         return formatter
     }
 
+    /// Shows the save panel for a finished recording and moves the file there.
+    ///
+    /// A move rather than a copy: the source is in the temporary directory and
+    /// would otherwise be left behind for the system to reap at some point.
+    @MainActor
+    public static func saveVideo(_ source: URL, defaultName: String? = nil) -> URL? {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = defaultName ?? recordingName()
+        panel.canCreateDirectories = true
+        panel.allowedContentTypes = [UTType.mpeg4Movie]
+        panel.level = OverlayLevel.aboveOverlay
+
+        guard panel.runModal() == .OK, let destination = panel.url else { return nil }
+        do {
+            // The panel guarantees the user agreed to overwrite, but the move
+            // itself fails if something is already there.
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.removeItem(at: destination)
+            }
+            try FileManager.default.moveItem(at: source, to: destination)
+            return destination
+        } catch {
+            NSLog("ClipShot: could not move the recording into place: \(error)")
+            return nil
+        }
+    }
+
+    /// `clipshot-recording-2026-08-21_14-30-05.mp4`.
+    public static func recordingName(date: Date = Date()) -> String {
+        "\(Kind.recording.prefix)-\(makeFormatter().string(from: date)).mp4"
+    }
+
     /// Shows the save panel for `image` (PNG). Main-actor: `NSSavePanel` is
     /// modal UI and is `@MainActor`-isolated, so the caller (the capture
     /// session, also main-actor) invokes it from the main actor.

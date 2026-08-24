@@ -180,3 +180,51 @@ private func sessionReadyToSave() -> (CaptureSession, OverlayView) {
     session.overlayViewDidSave(view)
     #expect(!session.hasOverlayForTesting)
 }
+
+// MARK: The recording lifecycle in the machine
+
+// Recording mode is entered when the region *picker* opens, not when frames
+// start rolling. That distinction is what the next few tests pin down: the
+// picker's confirm is the thing that begins the capture.
+
+@Test func confirmingTheRegionStartsTheRecording() {
+    var machine = CaptureStateMachine(mode: .recording,
+                                      capabilities: [.screenshot, .recording])
+    #expect(machine.handle(.overlayConfirmed) == .startRecordingSession)
+    #expect(machine.mode == .recording, "confirming the region does not leave recording mode")
+}
+
+@Test func cancellingTheRegionPickerAbandonsTheRecording() {
+    // Without this the machine stayed in .recording with no recorder and no
+    // overlay, and every later capture was refused as "already in flight".
+    var machine = CaptureStateMachine(mode: .recording,
+                                      capabilities: [.screenshot, .recording])
+    #expect(machine.handle(.overlayCancelled) == .dismiss)
+    #expect(machine.mode == .idle)
+}
+
+@Test func theRecordActionIsAToggle() {
+    // The menu collapses to "Stop Recording" and routes to the same action, and
+    // the hotkey should not need a different chord to stop than to start.
+    var machine = CaptureStateMachine(mode: .recording,
+                                      capabilities: [.screenshot, .recording])
+    #expect(machine.handle(.recordRequested) == .stopRecording)
+    #expect(machine.mode == .idle)
+}
+
+@Test func aScreenshotIsStillRefusedWhileRecording() {
+    var machine = CaptureStateMachine(mode: .recording,
+                                      capabilities: [.screenshot, .recording])
+    #expect(machine.handle(.screenshotRequested) == .refused)
+    #expect(machine.mode == .recording)
+}
+
+@Test func recordingRunsTheFullRoundTrip() {
+    var machine = CaptureStateMachine(capabilities: [.screenshot, .recording])
+    #expect(machine.handle(.recordRequested) == .beginRecording)
+    #expect(machine.handle(.overlayConfirmed) == .startRecordingSession)
+    #expect(machine.handle(.recordingStopped) == .stopRecording)
+    #expect(machine.mode == .idle, "the session must be reusable afterwards")
+    // And a screenshot works again once it is over.
+    #expect(machine.handle(.screenshotRequested) == .beginCapture)
+}

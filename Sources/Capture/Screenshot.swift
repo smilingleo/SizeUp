@@ -27,6 +27,11 @@ public enum Screenshot {
     ///     (the window may have closed between the two calls).
     ///   - pixelSize: Even-rounded output size in pixels (see `even`).
     ///   - showsCursor: Whether the system cursor is drawn in.
+    ///   - sourceRect: The part of the display to capture, in points with a
+    ///     top-left origin — the same space the overlay reports a selection in.
+    ///     `nil` captures the whole display. Used by recording, which grabs one
+    ///     region thirty times a second and would otherwise pay to capture and
+    ///     scale the entire screen for every frame.
     /// - Returns: The captured image, or `nil` on any ScreenCaptureKit failure.
     @MainActor
     public static func capture(
@@ -34,12 +39,20 @@ public enum Screenshot {
         display: SCDisplay,
         excludingWindows: [CGWindowID] = [],
         pixelSize: CGSize,
-        showsCursor: Bool
+        showsCursor: Bool,
+        sourceRect: CGRect? = nil
     ) async -> CGImage? {
         let configuration = SCStreamConfiguration()
         configuration.width = Int(pixelSize.width)
         configuration.height = Int(pixelSize.height)
         configuration.showsCursor = showsCursor
+        if let sourceRect {
+            configuration.sourceRect = sourceRect
+            // Without this the region is letterboxed into the output size
+            // instead of filling it, which shows up as black bars whenever the
+            // selection's aspect ratio is not the display's.
+            configuration.scalesToFit = false
+        }
 
         let excluded: [SCWindow] = excludingWindows
             .compactMap { inventory.window(matching: $0) }

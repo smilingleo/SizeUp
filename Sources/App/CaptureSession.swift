@@ -1,6 +1,7 @@
 import Annotation
 import AppKit
 import Capture
+import Config
 import Core
 import Geometry
 import OverlayUI
@@ -81,6 +82,14 @@ final class CaptureSession: OverlayViewDelegate {
         switch effect {
         case .beginCapture:
             Task { await self.runScreenshotCapture() }
+        case .beginRecording:
+            // Recording starts by picking a region, which is the same overlay
+            // the screenshot path uses; the machine routes the confirm.
+            Task { await self.runScreenshotCapture() }
+        case .startRecordingSession:
+            Task { await self.startRecording() }
+        case .stopRecording:
+            Task { await self.stopRecording() }
         case .dismissAndCopy:
             confirmAndCopy()
         case .dismiss:
@@ -89,8 +98,8 @@ final class CaptureSession: OverlayViewDelegate {
             showComingSoon()
         case .refused:
             NSLog("ClipShot: capture ignored — a capture is already in flight")
-        case .beginRecording, .beginScrollCapture, .stopRecording, .none:
-            // Unreachable in C1 (recording/scroll are not enabled).
+        case .beginScrollCapture, .none:
+            // Scroll capture lands in C5.
             break
         }
     }
@@ -166,6 +175,17 @@ final class CaptureSession: OverlayViewDelegate {
 
     /// The editor toolbar, shown once a region exists.
     private var toolbar: ToolbarWindow?
+
+    // MARK: Recording state
+
+    /// Reads the live capture settings (cursor and click-ripple toggles).
+    /// Injected so the session does not reach into the settings store, and so
+    /// tests can vary them.
+    var captureSettings: () -> Config.CaptureSettings = { Config.CaptureSettings() }
+
+    private var recorder: ScreenRecorder?
+    private var recordingTimer: Timer?
+    private var borderWindow: RecordingBorderWindow?
 
     private func presentOverlay(on screen: NSScreen) {
         guard let captured else { return }
@@ -273,6 +293,10 @@ final class CaptureSession: OverlayViewDelegate {
             toolbar?.orderOut(nil)
             return
         }
+        // No annotation toolbar when the overlay is being used to frame a
+        // recording: there is nothing to annotate, the shapes would not appear
+        // in the video, and the toolbar would sit over the region being framed.
+        guard machine.mode != .recording else { return }
         showToolbar(near: rect, view: view)
     }
 
@@ -310,15 +334,143 @@ final class CaptureSession: OverlayViewDelegate {
         fireModeChange()
     }
 
+    // MARK: Recording flow
+
+    /// The region has been chosen: swap the overlay for a border and start
+    /// rolling frames.
+    private func startRecording() async {
+        guard let captured, let view = overlayView, let region = view.selection,
+              let screen = overlayWindow?.screen ?? NSScreen.main,
+              let cgID = Self.cgDisplayID(of: screen)
+        else {
+            await abandonRecording("no region to record")
+            return
+        }
+        let scale = captured.scale
+        // Take the region picker down first. It is a full-screen dimmed window;
+        // leaving it up would be recorded over everything.
+        hideOverlay()
+
+        let settings = captureSettings()
+        let options = ScreenRecorder.Options(
+            region: region, scale: scale, displayID: cgID,
+            showsCursor: settings.showCursorInRecordings,
+            showsClickRipples: settings.showClickRipples)
+        let size = options.pixelSize
+        guard size.width > 0, size.height > 0 else {
+            await abandonRecording("the region rounds to nothing")
+            return
+        }
+
+        // The border goes up before the recorder starts, so its window ID can be
+        // excluded from the very first frame.
+        let border = RecordingBorderWindow()
+        border.show(around: region, on: screen.frame)
+        borderWindow = border
+
+        do {
+            let inventory = try await DisplayInventory.current()
+            guard let display = inventory.display(matching: cgID) else {
+                await abandonRecording("\(cgID) is not in the shareable display set")
+                return
+            }
+            let recorder = try ScreenRecorder(
+                options: options, url: Self.temporaryVideoURL(), inventory: inventory)
+            try recorder.start(display: display,
+                               excluding: [CGWindowID(border.windowNumber)])
+            self.recorder = recorder
+            startRecordingTimer()
+            NSLog("ClipShot: recording \(size.width)x\(size.height) to \(recorder.url?.lastPathComponent ?? "?")")
+        } catch {
+            await abandonRecording("could not start recording: \(error)")
+        }
+    }
+
+    private func startRecordingTimer() {
+        recordingTimer?.invalidate()
+        let timer = Timer(timeInterval: 1.0 / Double(Recording.fps), repeats: true) {
+            [weak self] _ in
+            // The tick is async (it awaits ScreenCaptureKit), so it is hopped
+            // onto the main actor rather than run inside the timer callback.
+            Task { @MainActor [weak self] in
+                await self?.recorder?.tick()
+            }
+        }
+        // Common modes, so frames keep being captured while a menu is open or a
+        // window is being dragged — exactly when a recording matters most.
+        RunLoop.main.add(timer, forMode: .common)
+        recordingTimer = timer
+    }
+
+    /// Stop, close the file, and offer to save it.
+    private func stopRecording() async {
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        borderWindow?.orderOut(nil)
+        borderWindow = nil
+
+        guard let recorder else { return }
+        self.recorder = nil
+        do {
+            guard let url = try recorder.finish() else {
+                NSLog("ClipShot: the recording captured no frames")
+                return
+            }
+            NSLog("ClipShot: recorded \(recorder.framesWritten) frames")
+            presentRecordingSave(url)
+        } catch {
+            NSLog("ClipShot: could not finish the recording: \(error)")
+        }
+    }
+
+    /// Move the finished video out of the temporary directory.
+    ///
+    /// A save dialog rather than a silent write: the recording took real effort
+    /// and the temporary file is deleted, so a cancelled save has to be a
+    /// deliberate choice rather than something that can happen by accident.
+    private func presentRecordingSave(_ url: URL) {
+        activateForPanel()
+        if let destination = presentVideoSavePanel(url) {
+            NSLog("ClipShot: saved recording to \(destination.path)")
+        } else {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
+    /// Seam: the video save dialog, so tests can drive the flow without a modal.
+    var presentVideoSavePanel: (URL) -> URL? = { FileSaver.saveVideo($0) }
+
+    /// Tear down a recording that could not start, and report why.
+    private func abandonRecording(_ reason: String) async {
+        NSLog("ClipShot: \(reason)")
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        borderWindow?.orderOut(nil)
+        borderWindow = nil
+        recorder?.cancel()
+        recorder = nil
+        hideOverlay()
+        machine.resetToIdle()
+        fireModeChange()
+    }
+
+    private static func temporaryVideoURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("clipshot-recording-\(UUID().uuidString).mp4")
+    }
+
+    /// True while frames are being written. Read by tests.
+    var isRecordingForTesting: Bool { recorder?.isRecording ?? false }
+
     // MARK: Alerts
 
-    /// The one-time "coming in a later build" notice for record/scroll in C1.
+    /// The "coming in a later build" notice, now only for scroll capture.
     private func showComingSoon() {
         let alert = NSAlert()
         alert.messageText = "Coming in a later build"
         alert.informativeText =
-            "Screen recording and scroll capture land in an upcoming ClipShot build. "
-            + "The shortcut stays registered; screenshot works today."
+            "Scroll capture lands in an upcoming ClipShot build. "
+            + "The shortcut stays registered; screenshot and recording work today."
         alert.addButton(withTitle: "OK")
         alert.runModal()
     }
