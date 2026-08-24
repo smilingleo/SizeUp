@@ -82,6 +82,7 @@ public final class AXWindow: WindowHandle {
         guard off > 1 else { return }
         Log.problem("\(who) did not take the frame it was given,"
             + " off by \(Int(off.rounded()))pt after \(attempts) attempts")
+        logProfile()
     }
 
     private static func text(_ rect: CGRect?) -> String {
@@ -105,12 +106,87 @@ public final class AXWindow: WindowHandle {
     private func writePoint(_ attribute: String, _ value: CGPoint) {
         var mutable = value
         guard let axValue = AXValueCreate(.cgPoint, &mutable) else { return }
-        AXUIElementSetAttributeValue(element, attribute as CFString, axValue)
+        record(AXUIElementSetAttributeValue(element, attribute as CFString, axValue), attribute)
     }
 
     private func writeSize(_ attribute: String, _ value: CGSize) {
         var mutable = value
         guard let axValue = AXValueCreate(.cgSize, &mutable) else { return }
-        AXUIElementSetAttributeValue(element, attribute as CFString, axValue)
+        record(AXUIElementSetAttributeValue(element, attribute as CFString, axValue), attribute)
+    }
+
+    /// The return value of an Accessibility write, which used to be discarded.
+    ///
+    /// Discarding it made two very different failures look identical: a write
+    /// the application rejected, and a write it accepted and then ignored. Only
+    /// the second is the application's own doing, and only the first can be
+    /// fixed by asking differently, so the distinction decides where to look.
+    private func record(_ status: AXError, _ attribute: String) {
+        guard status != .success else { return }
+        let who = bundleIdentifier ?? "pid \(pid)"
+        Log.problem("\(who) refused a \(attribute) write with AXError \(status.rawValue)")
+    }
+
+    /// What the window says about itself, logged only when it has just refused a
+    /// frame — one line, and only on the path that is already going wrong.
+    ///
+    /// Every field here answers a hypothesis that would otherwise need a guess.
+    /// A window in native full screen has a read-only size, and Accessibility
+    /// will say so through `AXUIElementIsAttributeSettable` rather than through
+    /// an error on the write. A minimised or non-standard window is not the one
+    /// the user is looking at. No title is logged: see `Log`'s note on what this
+    /// application does and does not put in the system log.
+    private func logProfile() {
+        let who = bundleIdentifier ?? "pid \(pid)"
+        let fields = [
+            "position settable \(settable(kAXPositionAttribute))",
+            "size settable \(settable(kAXSizeAttribute))",
+            // Spelled out because the constant is not exposed to Swift. This is
+            // the attribute that goes read-only in native full screen, which
+            // would explain a refusal that reports no error.
+            "full screen \(text(flag("AXFullScreen")))",
+            "minimised \(text(flag(kAXMinimizedAttribute)))",
+            "role \(string(kAXRoleAttribute) ?? "?")/\(string(kAXSubroleAttribute) ?? "?")",
+            "app windows \(windowCount.map(String.init) ?? "?")",
+        ]
+        Log.problem("\(who) window profile: " + fields.joined(separator: ", "))
+    }
+
+    private func settable(_ attribute: String) -> Bool {
+        var result = DarwinBoolean(false)
+        guard AXUIElementIsAttributeSettable(element, attribute as CFString, &result) == .success
+        else { return false }
+        return result.boolValue
+    }
+
+    private func flag(_ attribute: String) -> Bool? {
+        var raw: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &raw) == .success,
+              let value = raw as? Bool
+        else { return nil }
+        return value
+    }
+
+    private func string(_ attribute: String) -> String? {
+        var raw: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &raw) == .success
+        else { return nil }
+        return raw as? String
+    }
+
+    /// How many windows Accessibility thinks the application has. A large number
+    /// is how an application with hidden helper windows looks, and it is the one
+    /// remaining way for the wrong window to have been picked.
+    private var windowCount: Int? {
+        var raw: CFTypeRef?
+        let app = AXUIElementCreateApplication(pid)
+        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &raw) == .success
+        else { return nil }
+        return (raw as? [AXUIElement])?.count
+    }
+
+    private func text(_ flag: Bool?) -> String {
+        guard let flag else { return "unknown" }
+        return flag ? "yes" : "no"
     }
 }
