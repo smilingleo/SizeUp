@@ -79,6 +79,19 @@ public struct WindowProbe {
             ))
         }
 
+        // Shorter, with the width left alone. This is the trial that separates
+        // "the height has a maximum" from "the height cannot change", and the
+        // width has to stay put for it to mean anything: a narrow trial can be
+        // refused for violating a minimum width instead, and then it answers
+        // nothing. Three quarters of the current height, which is well clear of
+        // any plausible minimum.
+        trials.append(Trial(
+            question: "shorter, unchanged width",
+            frame: CGRect(x: current.minX, y: current.minY,
+                          width: current.width,
+                          height: (current.height * 0.75).rounded())
+        ))
+
         // A smaller size, in both dimensions. Growth and shrinkage are not the
         // same request, and a window that shrinks but will not grow has a
         // maximum, not a general refusal.

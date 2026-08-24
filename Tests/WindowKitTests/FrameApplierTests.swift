@@ -90,7 +90,9 @@ private final class RefusesToGrow {
     // frame reported back is the real one, not the one that was asked for.
     #expect(result.attemptsUsed == 3)
     #expect(result.frame == CGRect(x: -3360, y: -1395, width: 2056, height: 1290))
-    #expect(window.pauses == 2)
+    // One per attempt: each attempt that misses looks again after a pause,
+    // because an application still relayouting reads back mid-move.
+    #expect(window.pauses == 3)
 }
 
 @Test func aRefusedSizeStillLeavesTheWindowWhereItWasAskedToGo() {
@@ -132,9 +134,9 @@ private final class RefusesToGrow {
 
     #expect(result.attemptsUsed == 3)
     #expect(sizeWrites == 3)
-    // Two pauses for three attempts: it does not wait after the last one, when
-    // there is nothing left to wait for.
-    #expect(pauses == 2)
+    // Three attempts, three second looks. The bound is what matters: this is a
+    // window that will never comply, and it still costs 30ms and then stops.
+    #expect(pauses == 3)
     #expect(result.frame?.size == minimum)
 }
 
@@ -184,4 +186,34 @@ private final class RefusesToGrow {
     // Position out by more than the size is: the worst one wins.
     let moved = CGRect(x: 10 - 900, y: 10, width: 100, height: 90)
     #expect(FrameApplier.offset(of: moved, from: target) == 900)
+}
+
+@Test func aWindowStillSettlingIsGivenASecondLookBeforeBeingBlamed() {
+    // Slack's logged frames drifted between attempts — -952, then -825, then
+    // -857 — which is an application mid-relayout being read too early. A window
+    // that arrives one read late is compliant, and must not be reported as a
+    // refusal on the strength of a frame it was only passing through.
+    let target = CGRect(x: 10, y: 20, width: 300, height: 400)
+    var reads = 0
+    var pauses = 0
+    let applier = FrameApplier(
+        read: {
+            reads += 1
+            // The first read catches it halfway; the second, after the pause,
+            // catches where it landed.
+            return reads == 1 ? CGRect(x: 10, y: 20, width: 150, height: 200) : target
+        },
+        writePosition: { _ in },
+        writeSize: { _ in },
+        pause: { pauses += 1 }
+    )
+
+    let result = applier.apply(target)
+
+    #expect(result.frame == target)
+    // Still one attempt: the second look is not a retry, and nothing was
+    // written twice.
+    #expect(result.attemptsUsed == 1)
+    #expect(pauses == 1)
+    #expect(reads == 2)
 }

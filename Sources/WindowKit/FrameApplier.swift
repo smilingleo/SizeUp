@@ -72,12 +72,25 @@ struct FrameApplier {
             writeSize(target.size)
             writePosition(target.origin)
 
-            achieved = read()
-            guard let achieved else { return (nil, attempt) }
-            if Self.offset(of: achieved, from: target) <= tolerance {
-                return (achieved, attempt)
+            guard let immediate = read() else { return (nil, attempt) }
+            achieved = immediate
+            if Self.offset(of: immediate, from: target) <= tolerance {
+                return (immediate, attempt)
             }
-            if attempt < attempts { pause() }
+
+            // Look again after a pause. An application relayouts on its own
+            // schedule, so an immediate read can catch a frame it is still
+            // moving through rather than the one it settles on — which is how a
+            // window that did as it was told gets logged as one that did not.
+            //
+            // Only on the mismatching path, so a cooperative window still pays
+            // nothing: it returned above.
+            pause()
+            guard let settled = read() else { return (nil, attempt) }
+            achieved = settled
+            if Self.offset(of: settled, from: target) <= tolerance {
+                return (settled, attempt)
+            }
         }
         return (achieved, attempts)
     }
