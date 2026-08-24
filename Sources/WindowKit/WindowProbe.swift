@@ -13,6 +13,14 @@ import Geometry
 /// checked by reading was checked, and each came back clean. What is left is to
 /// ask the window a series of narrower questions and watch which one it refuses.
 ///
+/// That case is solved — see `FrameApplier.suppressingEnhancedUserInterface` —
+/// and this probe stays for the next one. One caveat, learned the hard way: its
+/// verdicts come from a read taken right after the write, and a window that
+/// animates its frame changes is still moving then. A trial that reports
+/// "off by 570pt" may only have been caught in transit. Trust the trials that
+/// establish *which dimension* is at stake; do not trust a single reading of how
+/// far out it was.
+///
 /// The trials are generated here, as arithmetic, so the interesting part is
 /// testable: they bisect the two candidate walls independently. Height alone,
 /// width alone, both together, and a size the window already has — because a

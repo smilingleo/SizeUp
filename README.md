@@ -172,6 +172,26 @@ those bindings are dropped, and the SizeUp importer reports them as skipped so
 the count it shows you is honest. Use macOS's own ⌃← / ⌃→ to change Spaces, or
 drag the window in Mission Control.
 
+### Applications that animate their own window moves
+
+Slack, and Electron applications generally, used to half-obey a tiling shortcut:
+the window moved but kept its old size. Going ½ → ⅓ → then to the other half
+left it a third wide in the new place; growing a quarter into a half never got
+the height. Chrome, VS Code and Finder were always fine.
+
+The difference is an application-level accessibility attribute,
+`AXEnhancedUserInterface`. Slack has it on; the others have it off. An
+application with it on applies a frame change as an *animation*, and position
+and size are two separate accessibility writes — so the size write lands while
+the animation started by the position write is still running, and the animation
+finishes at the size it began with. Nothing is refused and no error is reported;
+the second write is simply lost.
+
+ClipShot now reads that attribute, and for an application that has it on turns
+it off for the duration of the three writes and restores it immediately after.
+Applications that already tiled correctly are never written to at all. Measured
+on two displays: every transition lands exactly, in 3–30 ms.
+
 ## Screen capture
 
 ### Screenshot

@@ -16,24 +16,26 @@ public protocol RawFrameWriting: AnyObject {
 /// Tries the same frame request several different ways to find out whether the
 /// order of the writes is what a window is objecting to.
 ///
-/// Every other explanation is now exhausted. Slack accepts width writes and
-/// ignores height writes, whatever the height happens to be — after a manual
-/// drag to 1539 the frozen value became 1539, so it is not a display dimension
-/// and not a limit, it is the height simply never changing. Accessibility calls
-/// the size settable, the write returns success, the application has one
-/// standard window, and dragging the bottom edge by hand works.
+/// **It is not, and this probe is what established that.** Kept because the
+/// question comes back — the next stubborn window will look exactly like the
+/// last one — and because the answer is only worth anything with the numbers
+/// attached.
 ///
-/// The one variable never varied is ours. `setFrame` always writes position,
-/// size, position, and if the application's position handler re-asserts the
-/// size it currently believes in, that trailing write would undo the resize —
-/// invisibly, and with the width surviving only if the two attributes are
-/// applied on different schedules. That is a guess, but it is a testable one,
-/// which is more than the alternatives.
+/// What it found, on the live Slack window that prompted it: every order fails,
+/// and the ones that appear to work are reads taken while the window is still
+/// animating. That animation was the real finding. An application with
+/// `AXEnhancedUserInterface` set applies a frame change over time, so a read
+/// taken at a fixed delay lands somewhere in the middle of the move and can be
+/// mistaken for either success or refusal, and the second of two writes is lost
+/// to the animation the first one started. The fix is therefore not an order at
+/// all; it is in `FrameApplier.suppressingEnhancedUserInterface`, which has the
+/// full measurement.
 ///
-/// So: same request, several orders, one line of log each, restoring the
-/// window between plans so no plan inherits another's mess. If one order works,
-/// `setFrame` should adopt it. If none do, the height is not ours to change and
-/// the answer is a paragraph in the README rather than more code.
+/// Two lessons for anyone who reaches for this again. Vary the *application's*
+/// state, not only the order of our own calls: the order was the only variable
+/// this probe could see, so it was the only one it could blame. And wait for the
+/// frame to stop changing before believing a read — this probe's fixed pause
+/// does not, which is why its "TOOK THE HEIGHT" verdicts were not trustworthy.
 public struct WriteOrderProbe {
     public enum Step: Equatable, Sendable {
         case position

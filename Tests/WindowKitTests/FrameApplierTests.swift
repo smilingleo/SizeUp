@@ -70,6 +70,66 @@ private final class Cooperative {
     #expect(achieved == CGRect(x: 500, y: 500, width: 600, height: 400))
 }
 
+@Test func everyWriteHappensInsideTheSuppressionAndTheReadHappensOutsideIt() {
+    // The shape the measurement demands. An application with
+    // `AXEnhancedUserInterface` on animates a frame change, and the size write
+    // is then lost to the animation the position write started — so the mode has
+    // to be off before the FIRST write, not restored between them, and not
+    // turned off only after a refusal (measured: that fixes nothing).
+    //
+    // The read is deliberately outside, so what is reported is what the window
+    // settled on with its own mode restored.
+    var order: [String] = []
+    var frame = CGRect.zero
+    let applier = FrameApplier(
+        read: { order.append("read"); return frame },
+        writePosition: { order.append("position"); frame.origin = $0 },
+        writeSize: { order.append("size"); frame.size = $0 },
+        suppressingEnhancedUserInterface: { writes in
+            order.append("suppress")
+            writes()
+            order.append("restore")
+        }
+    )
+
+    _ = applier.apply(CGRect(x: 1, y: 2, width: 3, height: 4))
+
+    #expect(order == ["suppress", "position", "size", "position", "restore", "read"])
+}
+
+@Test func aWindowIsAppliedExactlyOnceEvenWhenItRefusesTheSize() {
+    // The suppression must not have smuggled a retry back in. A refusal is
+    // reported, not chased: that is the whole lesson of the reverted fix, and
+    // the reason the count is pinned in two tests rather than one.
+    var writes = 0
+    var suppressions = 0
+    let stuck = CGRect(x: 0, y: 0, width: 685, height: 1290)
+    let applier = FrameApplier(
+        read: { stuck },
+        writePosition: { _ in writes += 1 },
+        writeSize: { _ in writes += 1 },
+        suppressingEnhancedUserInterface: { body in
+            suppressions += 1
+            body()
+        }
+    )
+
+    let achieved = applier.apply(CGRect(x: 1028, y: 0, width: 1028, height: 1290))
+
+    #expect(achieved == stuck)
+    #expect(writes == 3)
+    #expect(suppressions == 1)
+}
+
+@Test func aCallerThatCannotSuppressAnythingStillGetsThePlainSequence() {
+    // The default. Nothing in `Geometry` or the tests has an application to ask,
+    // and a missing hook must mean "write normally", never "do not write".
+    let window = Cooperative(CGRect(x: 0, y: 0, width: 100, height: 100))
+    let target = CGRect(x: 10, y: 20, width: 300, height: 400)
+
+    #expect(window.applier().apply(target) == target)
+}
+
 @Test func aFractionOfAPointCountsAsCompliance() throws {
     // Accessibility positions are integral; a tiled frame need not be. Without
     // the tolerance every third-of-a-screen tiling would be logged as a refusal.

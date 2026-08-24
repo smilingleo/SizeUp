@@ -29,12 +29,16 @@ public final class AXWindow: WindowHandle {
         return cocoaRect(fromAX: CGRect(origin: position, size: size), primaryFrame: primaryFrame)
     }
 
-    /// Writes position, then size, then position again.
+    /// Writes position, then size, then position again, with the application's
+    /// enhanced-user-interface mode suppressed for the duration if it has it on.
     ///
     /// The two attributes are separate writes, so an application can clamp the
     /// size and leave the window mispositioned; re-applying position afterwards
     /// fixes that. The achieved frame is read back and returned, because
     /// applications with minimum sizes will not honour the request exactly.
+    ///
+    /// See `FrameApplier.suppressingEnhancedUserInterface` for what that mode
+    /// does to a frame change and what was measured.
     @discardableResult
     public func setFrame(_ requested: CGRect) -> CGRect? {
         // Refuse rather than corrupt: see CGRect.isSafeToApply.
@@ -50,7 +54,14 @@ public final class AXWindow: WindowHandle {
         let applier = FrameApplier(
             read: { [weak self] in self?.axFrame() },
             writePosition: { [weak self] in self?.writePoint(kAXPositionAttribute, $0) },
-            writeSize: { [weak self] in self?.writeSize(kAXSizeAttribute, $0) }
+            writeSize: { [weak self] in self?.writeSize(kAXSizeAttribute, $0) },
+            suppressingEnhancedUserInterface: { [weak self] writes in
+                guard let self else {
+                    writes()
+                    return
+                }
+                self.suppressingEnhancedUserInterface(writes)
+            }
         )
         let achieved = applier.apply(target)
 
@@ -114,6 +125,70 @@ public final class AXWindow: WindowHandle {
         record(AXUIElementSetAttributeValue(element, attribute as CFString, axValue), attribute)
     }
 
+    // MARK: - Enhanced user interface
+
+    /// The attribute an assistive client sets on an application to ask for
+    /// richer accessibility, and which some applications answer by animating
+    /// their window frame changes. Not exposed to Swift as a constant.
+    /// A `String` cast at each use site, like every other attribute name in
+    /// this file: a `static let` of `CFString` is not `Sendable` and the strict
+    /// concurrency checks reject it.
+    private static let enhancedUserInterface = "AXEnhancedUserInterface"
+
+    /// The application this window belongs to. `AXEnhancedUserInterface` lives
+    /// there, not on the window, which is why this exists at all.
+    ///
+    /// Built per action rather than held: an `AXWindow` is created fresh for
+    /// every action, so there is nothing to cache it in and no staleness to
+    /// worry about.
+    private var application: AXUIElement { AXUIElementCreateApplication(pid) }
+
+    /// Turns the mode off around `writes`, and only for an application that had
+    /// it on.
+    ///
+    /// The read comes first so that nothing is written to an application that
+    /// was already in the plain mode — the applications that have always tiled
+    /// correctly are exactly those, and they must stay untouched.
+    ///
+    /// The restore is in a `defer` because the alternative is leaving another
+    /// application's accessibility degraded for the rest of its lifetime if
+    /// anything in between goes wrong. Two writes to somebody else's process is
+    /// already more than this app likes to do; leaking one is not acceptable.
+    private func suppressingEnhancedUserInterface(_ writes: () -> Void) {
+        guard enhancedUserInterfaceIsOn else {
+            writes()
+            return
+        }
+        setEnhancedUserInterface(false)
+        defer { setEnhancedUserInterface(true) }
+        writes()
+    }
+
+    private var enhancedUserInterfaceIsOn: Bool {
+        var raw: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            application, Self.enhancedUserInterface as CFString, &raw
+        ) == .success else { return false }
+        return (raw as? Bool) == true
+    }
+
+    /// Deliberately does not go through `record`, and deliberately ignores the
+    /// `AXError`.
+    ///
+    /// This write reports `kAXErrorNotImplemented` (-25208) and takes effect
+    /// anyway: measured by writing `false`, reading the attribute back as
+    /// `false`, writing `true`, and reading it back as `true`, on the same
+    /// application whose windows then resized correctly. Logging that as a
+    /// refusal would put a false problem line in the log on every single window
+    /// action for such an application, and checking it would make the fix skip
+    /// itself.
+    private func setEnhancedUserInterface(_ on: Bool) {
+        let value = (on ? kCFBooleanTrue : kCFBooleanFalse) as CFTypeRef
+        _ = AXUIElementSetAttributeValue(
+            application, Self.enhancedUserInterface as CFString, value
+        )
+    }
+
     /// The return value of an Accessibility write, which used to be discarded.
     ///
     /// Discarding it made two very different failures look identical: a write
@@ -145,6 +220,12 @@ public final class AXWindow: WindowHandle {
             // would explain a refusal that reports no error.
             "full screen \(text(flag("AXFullScreen")))",
             "minimised \(text(flag(kAXMinimizedAttribute)))",
+            // On the application, not the window. Logged because a refusal from
+            // an application that has this on is the known animation case, and a
+            // refusal from one that does not is something new — and `setFrame`
+            // has already suppressed it, so seeing it here means suppressing was
+            // not enough.
+            "enhanced UI \(enhancedUserInterfaceIsOn)",
             "role \(string(kAXRoleAttribute) ?? "?")/\(string(kAXSubroleAttribute) ?? "?")",
             "app windows \(windowCount.map(String.init) ?? "?")",
         ]
