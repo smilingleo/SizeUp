@@ -1,4 +1,5 @@
 import Carbon.HIToolbox
+import Diagnostics
 import Foundation
 
 /// Why a shortcut could not be claimed.
@@ -164,7 +165,7 @@ public final class HotkeyManager {
             // The status is the only thing that distinguishes a Carbon quirk
             // from a plain conflict, and `explanation` deliberately omits it,
             // so log it here or it is unreachable outside a debugger.
-            NSLog("ClipShot: RegisterEventHotKey failed for \(shortcut.displayString), OSStatus \(status)")
+            Log.problem("RegisterEventHotKey failed for \(shortcut.displayString), OSStatus \(status)")
             registrationFailures.append(
                 RegistrationFailure(shortcut: shortcut, reason: .rejectedBySystem(status)))
             return false

@@ -1,4 +1,5 @@
 import AppKit
+import Diagnostics
 import Foundation
 import OverlayUI
 import UniformTypeIdentifiers
@@ -79,7 +80,7 @@ public enum FileSaver {
             try FileManager.default.moveItem(at: source, to: destination)
             return destination
         } catch {
-            NSLog("ClipShot: could not move the recording into place: \(error)")
+            Log.problem("could not move the recording into place: \(error)")
             return nil
         }
     }
@@ -114,14 +115,14 @@ public enum FileSaver {
 
         guard panel.runModal() == .OK, let destination = panel.url else { return nil }
         guard let png = Clipboard.pngData(from: image) else {
-            NSLog("ClipShot: could not encode the capture for saving")
+            Log.problem("could not encode the capture for saving")
             return nil
         }
         do {
             try png.write(to: destination, options: .atomic)
             return destination
         } catch {
-            NSLog("ClipShot: could not write the capture: \(error.localizedDescription)")
+            Log.problem("could not write the capture: \(error.localizedDescription)")
             return nil
         }
     }

@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Diagnostics
 import Geometry
 
 /// The minimal surface `AXWindowProvider` needs from a running application,
@@ -89,7 +90,10 @@ public struct AXWindowProvider: WindowProviding {
     }
 
     public func focusedWindow() -> WindowHandle? {
-        guard let app = targetApplication() else { return nil }
+        guard let app = targetApplication() else {
+            Log.problem("no target application, so no window to act on")
+            return nil
+        }
         // No `isTerminated` check on `app` here: this is safe, but only
         // because of `NSRunningApplication`'s own behavior, not anything in
         // this code. Once an app terminates, its `processIdentifier` becomes
@@ -102,10 +106,22 @@ public struct AXWindowProvider: WindowProviding {
         // pid could get silently reassigned to a new, unrelated process.
         let appElement = AXUIElementCreateApplication(app.processIdentifier)
         var raw: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
+        // The `AXError` is logged, not swallowed. "Nothing happened" is the
+        // single most common report about a window manager, and it has two very
+        // different causes that are otherwise indistinguishable from outside:
+        // no window was found (here) or the application declined the frame
+        // (`AXWindow.setFrame`). Both now say so.
+        let status = AXUIElementCopyAttributeValue(
             appElement, kAXFocusedWindowAttribute as CFString, &raw
-        ) == .success, let rawElement = raw, CFGetTypeID(rawElement) == AXUIElementGetTypeID()
-        else { return nil }
+        )
+        guard status == .success, let rawElement = raw,
+              CFGetTypeID(rawElement) == AXUIElementGetTypeID()
+        else {
+            Log.problem("\(app.bundleIdentifier ?? "pid \(app.processIdentifier)")"
+                + " has no focused window Accessibility can see"
+                + " (AXFocusedWindow -> \(status.rawValue))")
+            return nil
+        }
         let element = unsafeDowncast(rawElement, to: AXUIElement.self)
 
         return AXWindow(

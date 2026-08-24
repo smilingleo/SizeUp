@@ -1,4 +1,5 @@
 import AppKit
+import Diagnostics
 
 /// Puts a `CGImage` on the general pasteboard as PNG.
 ///
@@ -11,7 +12,7 @@ public enum Clipboard {
     @discardableResult
     public static func copy(_ image: CGImage) -> Bool {
         guard let png = pngData(from: image) else {
-            NSLog("ClipShot: could not encode the capture for the clipboard")
+            Log.problem("could not encode the capture for the clipboard")
             return false
         }
         let pasteboard = NSPasteboard.general

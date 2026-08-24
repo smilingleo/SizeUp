@@ -20,10 +20,13 @@ let package = Package(
     ],
     targets: [
         .target(name: "Geometry"),
-        .target(name: "WindowKit", dependencies: ["Geometry"]),
-        .target(name: "Hotkeys"),
+        // A dependency-free leaf so every layer can log. See `Log`'s doc for why
+        // this is a target rather than a helper inside one.
+        .target(name: "Diagnostics"),
+        .target(name: "WindowKit", dependencies: ["Geometry", "Diagnostics"]),
+        .target(name: "Hotkeys", dependencies: ["Diagnostics"]),
         .target(name: "Core", dependencies: ["Geometry", "WindowKit", "Hotkeys"]),
-        .target(name: "Config", dependencies: ["Geometry"]),
+        .target(name: "Config", dependencies: ["Geometry", "Diagnostics"]),
         // The capture side of the merge. `Capture` and `Annotation` are AppKit-free
         // (CoreGraphics/ScreenCaptureKit/CoreText) so their logic is testable without
         // windows on screen; `OverlayUI` is the first AppKit layer over them.
@@ -34,7 +37,7 @@ let package = Package(
         // is why `Compositor` had to live in `App` and video export does not.
         .target(name: "VideoEdit", dependencies: ["Annotation", "Capture"]),
         .target(name: "OverlayUI", dependencies: ["Capture", "Annotation", "VideoEdit"]),
-        .executableTarget(name: "App", dependencies: ["Geometry", "WindowKit", "Hotkeys", "Core", "Config", "Capture", "Annotation", "VideoEdit", "OverlayUI"]),
+        .executableTarget(name: "App", dependencies: ["Geometry", "Diagnostics", "WindowKit", "Hotkeys", "Core", "Config", "Capture", "Annotation", "VideoEdit", "OverlayUI"]),
         .testTarget(name: "GeometryTests", dependencies: ["Geometry", testing]),
         .testTarget(name: "WindowKitTests", dependencies: ["WindowKit", "Geometry", testing]),
         .testTarget(name: "HotkeysTests", dependencies: ["Hotkeys", testing]),

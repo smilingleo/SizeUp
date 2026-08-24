@@ -36,6 +36,12 @@ import sys
 FORBIDDEN_IMPORTS = {
     "Geometry": {"AppKit", "Foundation", "Carbon", "ApplicationServices", "Core",
                  "Config", "WindowKit", "Hotkeys"},
+    # The log. A leaf by definition: everything else may depend on it, so if it
+    # ever depends on anything the cycle is silent and the layering is a lie. It
+    # needs `os` and nothing else — not even Foundation.
+    "Diagnostics": {"AppKit", "Carbon", "ApplicationServices", "Foundation",
+                    "CoreGraphics", "Geometry", "Config", "Core", "Hotkeys",
+                    "WindowKit", "Capture", "Annotation", "VideoEdit", "OverlayUI"},
     "Config": {"AppKit", "Carbon", "Core", "Hotkeys", "WindowKit"},
     "Core": {"Foundation", "Config", "AppKit"},
     # Geometry included because `Hotkeys` declares NO dependencies in

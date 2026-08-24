@@ -1,3 +1,4 @@
+import Diagnostics
 import Foundation
 
 /// Owns the on-disk settings file and the in-memory `Settings` that mirrors
@@ -53,8 +54,8 @@ public final class SettingsStore {
         let fileManager = FileManager.default
         guard !fileManager.fileExists(atPath: url.path) else {
             if fileManager.fileExists(atPath: legacyURL.path) {
-                NSLog(
-                    "ClipShot: settings already present at \(url.path); leaving the legacy "
+                Log.note(
+                    "settings already present at \(url.path); leaving the legacy "
                     + "copy at \(legacyURL.path) for you to remove."
                 )
             }
@@ -68,8 +69,8 @@ public final class SettingsStore {
             )
             try fileManager.moveItem(at: legacyURL, to: url)
         } catch {
-            NSLog(
-                "ClipShot: could not migrate legacy settings from \(legacyURL.path): "
+            Log.problem(
+                "could not migrate legacy settings from \(legacyURL.path): "
                 + "\(error.localizedDescription)"
             )
         }

@@ -2,6 +2,7 @@ import Annotation
 import AppKit
 import Capture
 import Config
+import Diagnostics
 import VideoEdit
 import Core
 import Geometry
@@ -71,7 +72,7 @@ final class CaptureSession: OverlayViewDelegate {
         guard let event else { return }
 
         let effect = machine.handle(event)
-        NSLog("ClipShot: capture \(effect) for \(event) -> \(machine.mode)")
+        Log.note("capture \(effect) for \(event) -> \(machine.mode)")
         perform(effect)
         fireModeChange()
     }
@@ -98,7 +99,7 @@ final class CaptureSession: OverlayViewDelegate {
             // honest alert rather than silence.
             showComingSoon()
         case .refused:
-            NSLog("ClipShot: capture ignored — a capture is already in flight")
+            Log.problem("capture ignored — a capture is already in flight")
         case .none:
             break
         }
@@ -116,7 +117,7 @@ final class CaptureSession: OverlayViewDelegate {
         guard let screen = Self.screenUnderCursor(),
               let cgID = Self.cgDisplayID(of: screen)
         else {
-            NSLog("ClipShot: could not determine the display under the cursor")
+            Log.problem("could not determine the display under the cursor")
             machine.resetToIdle()
             fireModeChange()
             return
@@ -125,7 +126,7 @@ final class CaptureSession: OverlayViewDelegate {
         do {
             let inventory = try await DisplayInventory.current()
             guard let scDisplay = inventory.display(matching: cgID) else {
-                NSLog("ClipShot: \(cgID) not in the shareable display set")
+                Log.problem("\(cgID) not in the shareable display set")
                 machine.resetToIdle()
                 fireModeChange()
                 return
@@ -143,7 +144,7 @@ final class CaptureSession: OverlayViewDelegate {
             guard let image = await Screenshot.capture(
                 inventory, display: scDisplay, pixelSize: pixelSize, showsCursor: true
             ) else {
-                NSLog("ClipShot: ScreenCaptureKit returned no image")
+                Log.problem("ScreenCaptureKit returned no image")
                 machine.resetToIdle()
                 fireModeChange()
                 return
@@ -151,7 +152,7 @@ final class CaptureSession: OverlayViewDelegate {
             self.captured = CapturedImage(image: image, scale: scale)
             presentOverlay(on: screen)
         } catch {
-            NSLog("ClipShot: capture failed: \(error.localizedDescription)")
+            Log.problem("capture failed: \(error.localizedDescription)")
             machine.resetToIdle()
             fireModeChange()
         }
@@ -229,7 +230,7 @@ final class CaptureSession: OverlayViewDelegate {
         // opens unfocused behind whatever the user was looking at.
         activateForPanel()
         if let url = presentSavePanel(cropped) {
-            NSLog("ClipShot: saved capture to \(url.path)")
+            Log.note("saved capture to \(url.path)")
         }
     }
 
@@ -253,7 +254,7 @@ final class CaptureSession: OverlayViewDelegate {
             captured.image, selection: selection, scale: captured.scale,
             annotations: view.annotations
         ) else {
-            NSLog("ClipShot: selection produced an empty crop")
+            Log.problem("selection produced an empty crop")
             return nil
         }
         return flattened
@@ -382,7 +383,7 @@ final class CaptureSession: OverlayViewDelegate {
                                excluding: [CGWindowID(border.windowNumber)])
             self.recorder = recorder
             startRecordingTimer()
-            NSLog("ClipShot: recording \(size.width)x\(size.height) to \(recorder.url?.lastPathComponent ?? "?")")
+            Log.note("recording \(size.width)x\(size.height) to \(recorder.url?.lastPathComponent ?? "?")")
         } catch {
             await abandonRecording("could not start recording: \(error)")
         }
@@ -415,13 +416,13 @@ final class CaptureSession: OverlayViewDelegate {
         self.recorder = nil
         do {
             guard let url = try await recorder.finish() else {
-                NSLog("ClipShot: the recording captured no frames")
+                Log.problem("the recording captured no frames")
                 return
             }
-            NSLog("ClipShot: recorded \(recorder.framesWritten) frames")
+            Log.note("recorded \(recorder.framesWritten) frames")
             await openEditor(for: url)
         } catch {
-            NSLog("ClipShot: could not finish the recording: \(error)")
+            Log.problem("could not finish the recording: \(error)")
         }
     }
 
@@ -433,13 +434,13 @@ final class CaptureSession: OverlayViewDelegate {
     /// be opened, fall back to the save dialog rather than losing it.
     private func openEditor(for url: URL) async {
         guard editorWindow == nil else {
-            NSLog("ClipShot: an editor is already open")
+            Log.problem("an editor is already open")
             return
         }
         do {
             let decoder = try await VideoDecoder(url: url)
             guard decoder.totalFrames > 0 else {
-                NSLog("ClipShot: the recording has no frames to edit")
+                Log.problem("the recording has no frames to edit")
                 presentRecordingSave(url)
                 return
             }
@@ -453,7 +454,7 @@ final class CaptureSession: OverlayViewDelegate {
             activateForPanel()
             window.present()
         } catch {
-            NSLog("ClipShot: could not open the recording for editing: \(error)")
+            Log.problem("could not open the recording for editing: \(error)")
             presentRecordingSave(url)
         }
     }
@@ -481,7 +482,7 @@ final class CaptureSession: OverlayViewDelegate {
     private func presentRecordingSave(_ url: URL) {
         activateForPanel()
         if let destination = presentVideoSavePanel(url) {
-            NSLog("ClipShot: saved recording to \(destination.path)")
+            Log.note("saved recording to \(destination.path)")
         } else {
             try? FileManager.default.removeItem(at: url)
         }
@@ -495,7 +496,7 @@ final class CaptureSession: OverlayViewDelegate {
 
     /// Tear down a recording that could not start, and report why.
     private func abandonRecording(_ reason: String) async {
-        NSLog("ClipShot: \(reason)")
+        Log.problem("\(reason)")
         recordingTimer?.invalidate()
         recordingTimer = nil
         borderWindow?.orderOut(nil)
@@ -607,12 +608,12 @@ extension CaptureSession: RecordingEditorDelegate {
                         sink.yield(fraction)
                         return true
                     })
-                NSLog("ClipShot: exported to \(destination.path)")
+                Log.note("exported to \(destination.path)")
                 self.closeEditor(discardingSource: source)
                 self.machine.resetToIdle()
                 self.fireModeChange()
             } catch {
-                NSLog("ClipShot: the export failed: \(error)")
+                Log.problem("the export failed: \(error)")
                 self.showExportFailed(error)
             }
         }

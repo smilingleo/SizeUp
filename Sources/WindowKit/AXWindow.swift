@@ -1,5 +1,6 @@
 import ApplicationServices
 import CoreGraphics
+import Diagnostics
 import Foundation
 import Geometry
 
@@ -42,7 +43,41 @@ public final class AXWindow: WindowHandle {
         writePoint(kAXPositionAttribute, target.origin)
         writeSize(kAXSizeAttribute, target.size)
         writePoint(kAXPositionAttribute, target.origin)
-        return frame()
+        let achieved = frame()
+        report(request: cocoaRect, achieved: achieved)
+        return achieved
+    }
+
+    /// Log the cases where the application did not do as it was told.
+    ///
+    /// Only the disagreements, never the successes: a line per window move would
+    /// be noise nobody reads, whereas "Slack refused" is the whole answer to the
+    /// one complaint this code produces — "app X will not tile". Without it the
+    /// refusal is invisible, because `setFrame` reports the achieved frame and
+    /// every caller treats that as the truth (correctly — it is the truth).
+    ///
+    /// A point of tolerance rather than exact equality: Accessibility positions
+    /// are integral and a tiled frame need not be, so an honest application
+    /// still lands a fraction of a point away.
+    private func report(request: CGRect, achieved: CGRect?) {
+        let who = bundleIdentifier ?? "pid \(pid)"
+        guard let achieved else {
+            Log.problem("\(who) window frame unreadable after setFrame")
+            return
+        }
+        let off = max(
+            abs(achieved.minX - request.minX), abs(achieved.minY - request.minY),
+            abs(achieved.width - request.width), abs(achieved.height - request.height)
+        )
+        guard off > 1 else { return }
+        Log.problem("\(who) did not take the frame it was given."
+            + " asked \(Self.text(request)) got \(Self.text(achieved))"
+            + " off by \(Int(off.rounded()))pt")
+    }
+
+    private static func text(_ rect: CGRect) -> String {
+        "(\(Int(rect.minX.rounded())),\(Int(rect.minY.rounded()))"
+            + " \(Int(rect.width.rounded()))x\(Int(rect.height.rounded())))"
     }
 
     private func copyValue<T>(_ attribute: String, as type: AXValueType, _: T.Type) -> T? {
