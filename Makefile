@@ -1,4 +1,4 @@
-.PHONY: test lint build dev run clean
+.PHONY: test lint build dev run clean signing-cert
 
 test: lint
 	swift test
@@ -7,6 +7,11 @@ test: lint
 lint:
 	./Scripts/lint-tests.py
 	./Scripts/lint-layering.py
+
+# One-time: a stable signing identity, so the Accessibility and Screen
+# Recording grants survive a rebuild instead of being asked for every time.
+signing-cert:
+	./Scripts/make-signing-cert.sh
 
 build:
 	./Scripts/build-app.sh

@@ -33,6 +33,49 @@ Grant them under **System Settings → Privacy & Security → Accessibility** an
 > force a re-grant on every rebuild. The name is the identity; the identifier
 > is an implementation detail. Do not "clean" it up.
 
+### Granting permissions only once
+
+Run this **once per machine**, before your first build:
+
+```sh
+make signing-cert
+```
+
+Without it, every rebuild asks for Accessibility and Screen Recording all over
+again. The reason is that macOS remembers a grant against the app's *designated
+requirement*, and an ad-hoc signature has no certificate to name the app by, so
+the requirement is a bare hash of the code itself:
+
+```
+designated => cdhash H"2b4ef50d…"
+```
+
+Change one byte, rebuild, and the hash changes with it — the grant is still in
+the database, it just no longer matches anything. `make signing-cert` creates a
+self-signed code-signing certificate, which moves the requirement to:
+
+```
+designated => identifier "com.lliu.sizeup2" and certificate leaf = H"a8b9b432…"
+```
+
+Both halves survive a rebuild, so the permission is granted once and stays.
+The certificate does not need to be trusted by Gatekeeper for this to work; it
+only has to exist and stay the same. `make build` picks it up automatically and
+warns if it is missing.
+
+**Switching an already-installed app over to it** needs one cleanup, because the
+old grant is still keyed to the old ad-hoc hash and will look enabled while
+doing nothing:
+
+```sh
+make dev                                        # install the newly signed build
+tccutil reset Accessibility com.lliu.sizeup2    # drop the stale grant
+tccutil reset ScreenCapture com.lliu.sizeup2
+```
+
+Then grant both once when asked. That order matters — reset *after* installing
+the signed build, or you will re-grant the old one.
+
 ## Window management
 
 `ClipShot` uses the Accessibility API and a handful of global keyboard
