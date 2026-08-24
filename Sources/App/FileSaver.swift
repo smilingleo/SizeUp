@@ -42,19 +42,34 @@ public enum FileSaver {
         return formatter
     }
 
-    /// Shows the save panel for a finished recording and moves the file there.
+    /// Ask where a video should go, without touching any files.
     ///
-    /// A move rather than a copy: the source is in the temporary directory and
-    /// would otherwise be left behind for the system to reap at some point.
+    /// Separate from `saveVideo` because the two callers want different things:
+    /// saving a raw recording moves a temporary file into place, while exporting
+    /// needs somewhere to *write* and must leave the source alone -- it is still
+    /// about to be read from. Conflating them moved the recording out from under
+    /// the exporter, so the saved file was the unannotated original.
     @MainActor
-    public static func saveVideo(_ source: URL, defaultName: String? = nil) -> URL? {
+    public static func askForVideoDestination(defaultName: String? = nil) -> URL? {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = defaultName ?? recordingName()
         panel.canCreateDirectories = true
         panel.allowedContentTypes = [UTType.mpeg4Movie]
         panel.level = OverlayLevel.aboveOverlay
 
-        guard panel.runModal() == .OK, let destination = panel.url else { return nil }
+        guard panel.runModal() == .OK else { return nil }
+        return panel.url
+    }
+
+    /// Shows the save panel for a finished recording and moves the file there.
+    ///
+    /// A move rather than a copy: the source is in the temporary directory and
+    /// would otherwise be left behind for the system to reap at some point.
+    @MainActor
+    public static func saveVideo(_ source: URL, defaultName: String? = nil) -> URL? {
+        guard let destination = askForVideoDestination(defaultName: defaultName) else {
+            return nil
+        }
         do {
             // The panel guarantees the user agreed to overwrite, but the move
             // itself fails if something is already there.

@@ -490,6 +490,9 @@ final class CaptureSession: OverlayViewDelegate {
 
     /// Seam: the video save dialog, so tests can drive the flow without a modal.
     var presentVideoSavePanel: (URL) -> URL? = { FileSaver.saveVideo($0) }
+    /// Asks where to write an export. Distinct from `presentVideoSavePanel`,
+    /// which also moves the file it is given.
+    var presentVideoExportPanel: () -> URL? = { FileSaver.askForVideoDestination() }
 
     /// Tear down a recording that could not start, and report why.
     private func abandonRecording(_ reason: String) async {
@@ -576,8 +579,9 @@ extension CaptureSession: RecordingEditorDelegate {
                                 didRequestExport edit: RecordingEdit,
                                 annotationScale: CGSize) {
         // Ask where to put it *before* spending time encoding: cancelling after a
-        // long export would throw the work away.
-        guard let destination = presentVideoSavePanel(edit.videoURL) else { return }
+        // long export would throw the work away. Note this only asks -- the
+        // recording must stay where it is, because the export reads from it.
+        guard let destination = presentVideoExportPanel() else { return }
 
         let source = edit.videoURL
         let progress = ExportProgressWindow()

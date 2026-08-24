@@ -274,12 +274,18 @@ Scrub to a recognisable moment, draw an arrow, then scrub away. The arrow must
 disappear about a second later and reappear when you scrub back. Its bar in the
 timeline must sit under the part of the scrubber where it is visible.
 
-## 24. Retiming
-Select the arrow and drag the right end of its bar to the end of the video. It
-should now stay on screen for the rest of the playback. Drag the left end past
-the right end — it must refuse rather than vanish.
+## 24. Retiming, on the mini bar
+Select the arrow. A small dark bar must appear *directly below* it — not over it,
+and not somewhere else in the window — showing the whole recording with the
+arrow's span marked. Drag the right handle to the end: the arrow should now stay
+on screen for the rest of the playback. Drag the left handle past the right one —
+it must refuse rather than let the span collapse. Move the shape and reselect: the
+bar must follow it, and must stay inside the window even for a shape at the edge.
+
+Press **Done** and the bar goes away with the selection.
 
 ## 25. Freeze
+Use **Hold** on the mini bar and pick a duration; then check `F` does the same.
 Scrub to a moment and press `F`. The video should get two seconds longer, the
 timeline should show a shaded band, and playing through it should hold that one
 frame and then continue from where it left off — not jump or restart. Any
@@ -291,7 +297,8 @@ annotation you placed on a moment must still be on that moment. Set it back to
 1× — timings should return to where they were.
 
 ## 27. Pulse
-Select a shape and press `U`. It should breathe and glow yellow at about 2–3
+Use **Pulse** on the mini bar; the button should light up while it is on. Then
+check the key does the same: select a shape and press `U`. It should breathe and glow yellow at about 2–3
 times a second, smoothly rather than snapping. Its bar in the timeline gets a
 yellow cap.
 
@@ -300,7 +307,8 @@ Pick the text tool, click, and type — including with an input method. The same
 as the screenshot editor: Return commits, ⇧Return inserts a newline.
 
 ## 29. Export matches the canvas
-Export with several annotations, a freeze and a non-1× speed. Play the exported
+**This is the highest-risk item.** Export with several annotations, a freeze and a
+non-1× speed. Play the exported
 file: every annotation must appear at the same moment, in the same place and at
 the same size as in the editor, the freeze must be there, and the length must
 match what the editor showed. A progress window should appear during the encode.
@@ -309,3 +317,9 @@ match what the editor showed. A progress window should appear during the encode.
 Close the editor with edits pending: it must ask, and then still offer to save
 the original recording. Cancel that save and the recording is gone — which is
 the point of asking twice.
+
+## 31. The exported file is the annotated one
+Export, then open the saved file outside ClipShot. The annotations must be *in*
+it. This regressed once: the save dialog moved the raw recording onto the chosen
+path and the encode then failed, so the file looked right and had nothing drawn
+on it. Check the recording is not also left behind in the temporary folder.

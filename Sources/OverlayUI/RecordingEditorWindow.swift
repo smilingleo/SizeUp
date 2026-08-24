@@ -35,8 +35,9 @@ public final class RecordingEditorWindow: NSWindow {
     private let playButton = NSButton()
     private let timeLabel = NSTextField(labelWithString: "0:00 / 0:00")
     private let speedPopUp = NSPopUpButton()
-    private let freezeButton = NSButton()
-    private let pulseButton = NSButton()
+    /// Per-annotation controls, floating next to the selected shape.
+    private let miniBar = MiniBarView()
+    private var controls: NSView?
     private let exportButton = NSButton()
 
     private var playbackTimer: Timer?
@@ -96,45 +97,52 @@ public final class RecordingEditorWindow: NSWindow {
         root.autoresizingMask = [.width, .height]
 
         canvas.autoresizingMask = [.width, .height]
-        timeline.autoresizingMask = [.width, .minYMargin]
+        timeline.autoresizingMask = [.width, .maxYMargin]
         timeline.timelineDelegate = self
 
-        let controls = buildControls()
-        controls.autoresizingMask = [.width, .minYMargin]
+        controls = buildControls()
+        controls?.autoresizingMask = [.width, .maxYMargin]
+
+        miniBar.barDelegate = self
+        miniBar.isHidden = true
 
         root.addSubview(canvas)
         root.addSubview(timeline)
-        root.addSubview(controls)
+        if let controls { root.addSubview(controls) }
+        // Above the canvas in z-order: the bar floats over the video, next to the
+        // shape it belongs to.
+        root.addSubview(miniBar)
         contentView = root
         layoutParts()
     }
 
     private func layoutParts() {
         guard let root = contentView else { return }
-        let height = root.bounds.height
-        let controlsY = height - Self.controlsHeight
-        let timelineY = controlsY - TimelineView.totalHeight
+        // The progress area goes at the bottom, under the picture, the way every
+        // other video player puts it -- and the way the original does. Above the
+        // video it read as a toolbar and the playhead was nowhere near the frame
+        // it referred to.
+        let controlsY: CGFloat = 0
+        let timelineY = Self.controlsHeight
+        let canvasY = timelineY + TimelineView.totalHeight
 
-        // AppKit's origin is bottom-left, so the canvas fills what is left below
-        // the chrome.
-        root.subviews.first { $0 === canvas }?.frame =
-            CGRect(x: 0, y: 0, width: root.bounds.width, height: timelineY)
+        controls?.frame = CGRect(x: 0, y: controlsY,
+                                 width: root.bounds.width, height: Self.controlsHeight)
         timeline.frame = CGRect(x: 0, y: timelineY,
                                 width: root.bounds.width, height: TimelineView.totalHeight)
-        root.subviews.last?.frame = CGRect(x: 0, y: controlsY,
-                                           width: root.bounds.width,
-                                           height: Self.controlsHeight)
+        canvas.frame = CGRect(x: 0, y: canvasY, width: root.bounds.width,
+                              height: max(root.bounds.height - canvasY, 0))
+        positionMiniBar()
     }
 
     private func buildControls() -> NSView {
         let bar = NSView()
+        // The same backing as the timeline: the two together are one progress
+        // area, and a bare strip under a dark timeline looked like a gap.
+        bar.wantsLayer = true
+        bar.layer?.backgroundColor = TimelineView.backgroundColor
 
         configure(playButton, symbol: "play.fill", fallback: "▶", action: #selector(togglePlay))
-        configure(freezeButton, symbol: "snowflake", fallback: "❄", action: #selector(insertFreeze))
-        freezeButton.toolTip = "Freeze this frame for \(Int(Self.insertedHoldSeconds))s (F)"
-        configure(pulseButton, symbol: "waveform.circle", fallback: "◎",
-                  action: #selector(togglePulse))
-        pulseButton.toolTip = "Pulse the selected annotation (U)"
 
         timeLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
         timeLabel.textColor = .secondaryLabelColor
@@ -151,8 +159,7 @@ public final class RecordingEditorWindow: NSWindow {
         exportButton.action = #selector(export)
         exportButton.keyEquivalent = "\r"
 
-        for view in [playButton, freezeButton, pulseButton, timeLabel,
-                     speedPopUp, exportButton] as [NSView] {
+        for view in [playButton, timeLabel, speedPopUp, exportButton] as [NSView] {
             bar.addSubview(view)
         }
         bar.postsFrameChangedNotifications = true
@@ -176,10 +183,8 @@ public final class RecordingEditorWindow: NSWindow {
         let y = (bar.bounds.height - buttonSize.height) / 2
 
         var x = pad
-        for button in [playButton, freezeButton, pulseButton] {
-            button.frame = CGRect(origin: CGPoint(x: x, y: y), size: buttonSize)
-            x += buttonSize.width + gap
-        }
+        playButton.frame = CGRect(origin: CGPoint(x: x, y: y), size: buttonSize)
+        x += buttonSize.width + gap
         timeLabel.frame = CGRect(x: x + gap, y: y + 3, width: 116, height: 16)
 
         let exportWidth: CGFloat = 88
@@ -333,10 +338,58 @@ public final class RecordingEditorWindow: NSWindow {
         } else {
             playButton.title = bridge.isPlaying ? "❚❚" : "▶"
         }
-        pulseButton.isEnabled = bridge.selectedDocumentIndex != nil
+        syncMiniBar()
         timeLabel.stringValue =
             "\(Self.timecode(bridge.currentFrame, fps: bridge.edit.fps))"
             + " / \(Self.timecode(bridge.edit.totalFrames, fps: bridge.edit.fps))"
+    }
+
+    // MARK: Test seams
+
+    /// Select a document annotation and refresh, as clicking it would.
+    func selectForTesting(_ index: Int) {
+        bridge.selectDocument(index)
+        refresh()
+    }
+
+    var miniBarFrameForTesting: CGRect { miniBar.isHidden ? .zero : miniBar.frame }
+
+    // MARK: The mini bar
+
+    /// Show the bar for the selected annotation, or hide it if nothing is selected.
+    private func syncMiniBar() {
+        guard let index = bridge.selectedDocumentIndex,
+              bridge.edit.annotations.indices.contains(index) else {
+            miniBar.isHidden = true
+            return
+        }
+        let timed = bridge.edit.annotations[index]
+        miniBar.isHidden = false
+        miniBar.update(start: timed.range.start,
+                       end: timed.range.end ?? bridge.edit.totalFrames,
+                       totalFrames: bridge.edit.totalFrames,
+                       fps: bridge.edit.fps,
+                       pulsing: timed.pulses,
+                       freezeSpans: bridge.edit.freezeSpans())
+        positionMiniBar()
+    }
+
+    /// Park the bar under the selected shape, in the window's coordinates.
+    private func positionMiniBar() {
+        guard !miniBar.isHidden, let root = contentView,
+              let shape = bridge.editor.selectedAnnotation else { return }
+        // The shape is in annotation space; the bar lives in the root view, so it
+        // has to be moved into the canvas's frame first.
+        let inCanvas = shape.boundingRect()
+            .offsetBy(dx: canvas.videoRect.minX, dy: canvas.videoRect.minY)
+        // The canvas is flipped and the root view is not, so y has to be turned
+        // over: without this the bar tracks the shape's mirror image.
+        let flippedY = canvas.bounds.height - inCanvas.maxY
+        let inRoot = CGRect(x: inCanvas.minX + canvas.frame.minX,
+                            y: flippedY + canvas.frame.minY,
+                            width: inCanvas.width, height: inCanvas.height)
+        miniBar.setFrameOrigin(MiniBarLayout.origin(under: inRoot, in: canvas.frame))
+        _ = root
     }
 
     /// `m:ss` — the recordings this edits are short, so hours would be noise.
@@ -413,6 +466,38 @@ public final class RecordingEditorWindow: NSWindow {
 
 extension RecordingEditorWindow: RecordingCanvasDelegate {
     public func canvasDidEdit(_ canvas: RecordingCanvasView) {
+        refresh()
+    }
+}
+
+extension RecordingEditorWindow: MiniBarViewDelegate {
+    func miniBar(_ bar: MiniBarView, didSetStart start: Int, end: Int) {
+        bridge.setSelectedRange(start: start, end: end)
+        refresh()
+    }
+
+    func miniBar(_ bar: MiniBarView, didScrubTo frame: Int) {
+        stopPlayback()
+        bridge.seek(to: frame)
+        canvas.invalidateFrame()
+        refresh()
+    }
+
+    func miniBarDidTogglePulse(_ bar: MiniBarView) {
+        bridge.toggleSelectedPulse()
+        refresh()
+    }
+
+    func miniBar(_ bar: MiniBarView, didInsertHold seconds: Double) {
+        let hold = max(Int((bridge.edit.fps * seconds).rounded()), 1)
+        bridge.insertFreeze(at: bridge.currentFrame, holdFrames: hold)
+        canvas.invalidateFrame()
+        refresh()
+    }
+
+    func miniBarDidFinish(_ bar: MiniBarView) {
+        bridge.editor.clearSelection()
+        bridge.sync()
         refresh()
     }
 }

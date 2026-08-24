@@ -263,7 +263,7 @@ private func makeTinyVideo(frames: Int = 30) async throws -> URL {
 
     let session = CaptureSession(capabilities: [.screenshot, .recording])
     let asked = Box()
-    session.presentVideoSavePanel = { _ in asked.set(); return nil }
+    session.presentVideoExportPanel = { asked.set(); return nil }
 
     session.recordingEditor(window, didRequestExport: edit,
                             annotationScale: CGSize(width: 64, height: 64))
@@ -299,4 +299,69 @@ private func makeTinyVideo(frames: Int = 30) async throws -> URL {
 private final class Box {
     private(set) var value = false
     func set() { value = true }
+}
+
+@MainActor
+@Test func exportingWritesAnAnnotatedFileAndLeavesTheRecordingAlone() async throws {
+    // Regression: the export used the same seam as "save this recording", which
+    // *moves* the file it is given. So the raw recording was moved onto the
+    // chosen path and the exporter was then asked to read a file that no longer
+    // existed -- the saved video was the original, without annotations.
+    let source = try await makeTinyVideo(frames: 12)
+    defer { try? FileManager.default.removeItem(at: source) }
+
+    let decoder = try await VideoDecoder(url: source)
+    var edit = RecordingEdit(videoURL: source, totalFrames: decoder.totalFrames,
+                             fps: decoder.fps)
+    // A filled rectangle over the whole frame, so "did it draw" is unambiguous.
+    edit.add(Annotation(kind: .rect(origin: .zero, size: CGSize(width: 64, height: 64)),
+                        color: AnnotationColor.choices[0], width: 6), at: 0)
+    edit.setRange(0, start: 0, end: nil)
+
+    let destination = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clipshot-export-\(UUID().uuidString).mp4")
+    defer { try? FileManager.default.removeItem(at: destination) }
+
+    let window = RecordingEditorWindow(edit: edit, decoder: decoder)
+    let session = CaptureSession(capabilities: [.screenshot, .recording])
+    session.presentVideoExportPanel = { destination }
+
+    session.recordingEditor(window, didRequestExport: edit,
+                            annotationScale: CGSize(width: 64, height: 64))
+
+    // The export runs in its own task. Waiting for the file to *exist* is not
+    // enough -- AVAssetWriter creates it up front -- so wait until it can be
+    // opened as a video, which is only true once the writer has finished.
+    var opened: VideoDecoder?
+    for _ in 0..<150 {
+        try await Task.sleep(for: .milliseconds(100))
+        if let decoder = try? await VideoDecoder(url: destination) {
+            opened = decoder
+            break
+        }
+    }
+
+    // If the recording had been moved rather than read, the encode would have
+    // failed and there would be no complete video here at all.
+    let exported = try #require(opened, "no complete exported video was written")
+    // The temp recording is cleaned up only *after* a successful export.
+    #expect(!FileManager.default.fileExists(atPath: source.path),
+            "the temporary recording was left behind")
+    let frame = try #require(try await exported.frame(at: 0))
+    #expect(maxRed(frame) > 0.6,
+            "the exported frame has no annotation drawn on it")
+}
+
+/// The highest red value in the image, used to spot a pink stroke on a video
+/// whose own red channel is low everywhere.
+private func maxRed(_ image: CGImage) -> Double {
+    let w = image.width, h = image.height
+    var pixels = [UInt8](repeating: 0, count: w * h * 4)
+    let ctx = CGContext(data: &pixels, width: w, height: h, bitsPerComponent: 8,
+                        bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
+                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+    var best: UInt8 = 0
+    for i in stride(from: 0, to: pixels.count, by: 4) { best = max(best, pixels[i]) }
+    return Double(best) / 255
 }

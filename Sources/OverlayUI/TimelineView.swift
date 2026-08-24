@@ -102,10 +102,13 @@ public final class TimelineView: NSView {
 
     // MARK: Drawing
 
+    /// Shared with the controls strip below, so the progress area is one surface.
+    public static let backgroundColor = CGColor(gray: 0.13, alpha: 1)
+
     public override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext, let edit else { return }
 
-        context.setFillColor(CGColor(gray: 0.13, alpha: 1))
+        context.setFillColor(Self.backgroundColor)
         context.fill(bounds)
 
         drawScrubber(context, edit)

@@ -206,11 +206,13 @@ holding on the result.
 |---|---|
 | **Play** | Space, or the play button. ←/→ step a frame, ⇧←/⇧→ ten. |
 | **Annotate** | The same eleven tools as the screenshot editor, same shortcuts. Each shape is visible for a span of frames, not the whole video. |
-| **Retime** | Select a shape and drag either end of its bar in the timeline. |
-| **Pulse** | `U` — the shape breathes and glows, to draw the eye without narration. |
-| **Freeze** | `F` — holds the current frame for two seconds. The timeline grows and later annotations shift with it, so they stay on the moments they were placed on. |
+| **Retime, pulse, hold** | Select a shape and a small bar appears under it, showing where in the recording it is visible. Drag either end to retime; **Pulse** makes it breathe and glow; **Hold** freezes the current frame for 1–5 seconds. |
+| **Pulse / Freeze** | `U` and `F` do the same as those two buttons. A freeze grows the timeline and shifts later annotations with it, so they stay on the moments they were placed on. |
 | **Speed** | 0.5×–2×. Annotation timings are rescaled with it. |
 | **Export** | ⌘S or Return. Writes a new H.264 file with the annotations burned in. |
+
+The progress area is at the bottom, under the picture: the scrubber, the
+annotation bars, and then the playback controls.
 
 Escape backs out: first the selection, then the editor. Closing with unsaved
 edits asks first, and still offers to save the untouched recording.
