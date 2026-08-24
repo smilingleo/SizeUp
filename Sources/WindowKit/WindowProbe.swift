@@ -1,5 +1,6 @@
 import CoreGraphics
 import Diagnostics
+import Foundation
 import Geometry
 
 /// Finds out, by experiment, what a window will actually accept.
@@ -138,6 +139,19 @@ public struct WindowProbe {
 
         window.setFrame(original)
         Log.problem("probe: \(who) restored to \(Self.text(original))")
+
+        // The trials establish *what* is refused. If a size was refused, the
+        // remaining question is whether the way it was asked is at fault, and
+        // only a window that can be written to raw can answer it.
+        if let raw = window as? RawFrameWriting, let axOriginal = raw.readAXFrame() {
+            let fullHeight = CGRect(x: axOriginal.minX, y: axOriginal.minY,
+                                    width: axOriginal.width, height: screen.visibleFrame.height)
+            WriteOrderProbe.run(
+                on: raw, target: fullHeight, original: axOriginal,
+                pause: { Thread.sleep(forTimeInterval: 0.08) },
+                describe: { Log.problem("probe: \($0)") }
+            )
+        }
     }
 
     private static func text(_ rect: CGRect?) -> String {

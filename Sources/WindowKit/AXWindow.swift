@@ -61,7 +61,7 @@ public final class AXWindow: WindowHandle {
 
     /// The frame in Accessibility space, which is where the writes happen and so
     /// where they have to be checked.
-    private func axFrame() -> CGRect? {
+    func axFrame() -> CGRect? {
         guard let position = copyValue(kAXPositionAttribute, as: .cgPoint, CGPoint.self),
               let size = copyValue(kAXSizeAttribute, as: .cgSize, CGSize.self)
         else { return nil }
@@ -188,5 +188,22 @@ public final class AXWindow: WindowHandle {
     private func text(_ flag: Bool?) -> String {
         guard let flag else { return "unknown" }
         return flag ? "yes" : "no"
+    }
+}
+
+
+// MARK: - Raw writes, for the write-order probe only
+
+/// Exposed so `WriteOrderProbe` can vary the order. Nothing else should: the
+/// choreography belongs in `setFrame`, and a second caller choosing its own
+/// order is how two code paths start disagreeing about how to move a window.
+extension AXWindow: RawFrameWriting {
+    public func readAXFrame() -> CGRect? { axFrame() }
+    public func writeAXPosition(_ position: CGPoint) {
+        writePoint(kAXPositionAttribute, position)
+    }
+
+    public func writeAXSize(_ size: CGSize) {
+        writeSize(kAXSizeAttribute, size)
     }
 }
