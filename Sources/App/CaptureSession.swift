@@ -493,6 +493,8 @@ final class CaptureSession: OverlayViewDelegate {
     /// Asks where to write an export. Distinct from `presentVideoSavePanel`,
     /// which also moves the file it is given.
     var presentVideoExportPanel: () -> URL? = { FileSaver.askForVideoDestination() }
+    /// Seam: the discard confirmation, so tests can answer it without a modal.
+    var confirmDiscard: () -> Bool = { CaptureSession.askToDiscardEdits() }
 
     /// Tear down a recording that could not start, and report why.
     private func abandonRecording(_ reason: String) async {
@@ -621,26 +623,33 @@ extension CaptureSession: RecordingEditorDelegate {
 
     public func recordingEditorDidCancel(_ window: RecordingEditorWindow) {
         let edit = window.currentEdit
-        // Only ask if there is something to lose. A confirmation on an untouched
-        // recording is just an extra click between the user and the file.
-        if edit.hasEdits, !confirmDiscard() { return }
-
-        // The recording itself is still worth keeping even if the edits are not,
-        // so offer to save the original rather than deleting it silently.
         let source = edit.videoURL
-        closeEditor(discardingSource: nil)
-        presentRecordingSave(source)
+        if edit.hasEdits {
+            // Only ask if there is something to lose. A confirmation on an
+            // untouched recording is just an extra click between the user and
+            // the file.
+            guard confirmDiscard() else { return }
+            // A confirmed discard is the whole answer: following it with a save
+            // dialog reads as the app ignoring the choice just made, so the
+            // recording goes with the edits.
+            closeEditor(discardingSource: source)
+        } else {
+            // Nothing was confirmed here, so the recording is still worth
+            // offering: throwing away the only copy on one keypress is not a
+            // deliberate enough choice to delete a file on.
+            closeEditor(discardingSource: nil)
+            presentRecordingSave(source)
+        }
         machine.resetToIdle()
         fireModeChange()
     }
 
-    /// Seam: the discard confirmation.
-    func confirmDiscard() -> Bool {
+    static func askToDiscardEdits() -> Bool {
         let alert = NSAlert()
         alert.messageText = "Discard your edits?"
         alert.informativeText =
-            "The annotations, freezes and speed changes will be lost. "
-            + "You can still save the original recording."
+            "The annotations, freezes and speed changes will be lost, "
+            + "along with the recording itself."
         alert.addButton(withTitle: "Discard")
         alert.addButton(withTitle: "Keep Editing")
         return alert.runModal() == .alertFirstButtonReturn

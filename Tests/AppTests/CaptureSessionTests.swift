@@ -286,6 +286,56 @@ private func makeTinyVideo(frames: Int = 30) async throws -> URL {
     #expect(offered.value)
 }
 
+@MainActor
+@Test func confirmingTheDiscardTakesTheRecordingWithTheEdits() async throws {
+    // Regression: a confirmed discard was followed by the "save the recording"
+    // dialog, which reads as the app ignoring the answer just given. Once the
+    // user has said discard, there is nothing left to ask.
+    let source = try await makeTinyVideo()
+    defer { try? FileManager.default.removeItem(at: source) }
+
+    let decoder = try await VideoDecoder(url: source)
+    var edit = RecordingEdit(videoURL: source, totalFrames: decoder.totalFrames,
+                             fps: decoder.fps)
+    edit.add(Annotation(kind: .rect(origin: .zero, size: CGSize(width: 16, height: 16)),
+                        color: AnnotationColor.choices[0], width: 4), at: 0)
+    let window = RecordingEditorWindow(edit: edit, decoder: decoder)
+    #expect(window.currentEdit.hasEdits, "the edit under test has nothing to discard")
+
+    let session = CaptureSession(capabilities: [.screenshot, .recording])
+    let offered = Box()
+    session.confirmDiscard = { true }
+    session.presentVideoSavePanel = { _ in offered.set(); return nil }
+
+    session.recordingEditorDidCancel(window)
+    #expect(!offered.value, "it asked where to save after the discard was confirmed")
+    #expect(!FileManager.default.fileExists(atPath: source.path),
+            "the discarded recording was left behind")
+}
+
+@MainActor
+@Test func keepingTheEditsLeavesTheEditorOpen() async throws {
+    let source = try await makeTinyVideo()
+    defer { try? FileManager.default.removeItem(at: source) }
+
+    let decoder = try await VideoDecoder(url: source)
+    var edit = RecordingEdit(videoURL: source, totalFrames: decoder.totalFrames,
+                             fps: decoder.fps)
+    edit.add(Annotation(kind: .rect(origin: .zero, size: CGSize(width: 16, height: 16)),
+                        color: AnnotationColor.choices[0], width: 4), at: 0)
+    let window = RecordingEditorWindow(edit: edit, decoder: decoder)
+
+    let session = CaptureSession(capabilities: [.screenshot, .recording])
+    let offered = Box()
+    session.confirmDiscard = { false }
+    session.presentVideoSavePanel = { _ in offered.set(); return nil }
+
+    session.recordingEditorDidCancel(window)
+    #expect(!offered.value, "keeping the edits still asked where to save")
+    #expect(FileManager.default.fileExists(atPath: source.path),
+            "the recording was deleted even though the edits were kept")
+}
+
 /// A one-shot flag, since the seams are non-escaping closures over a `let`.
 private final class Box {
     private(set) var value = false
